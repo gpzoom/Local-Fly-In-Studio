@@ -65,17 +65,25 @@ export async function censusGeocode(address: string, options: JsonpOptions = {})
       clearTimeout(timeoutId);
       cleanup();
 
-      const match = response?.result?.addressMatches?.[0];
-      if (!match) {
-        resolve(null);
-        return;
-      }
+      // The payload comes from a JSONP script injected into the page, so its shape isn't
+      // guaranteed. Guard against a malformed/unexpected shape (e.g. a match missing
+      // `coordinates`) so a thrown error here can't leave the promise unsettled forever -
+      // this callback runs outside the executor's call stack, so nothing else would catch it.
+      try {
+        const match = response?.result?.addressMatches?.[0];
+        if (!match || typeof match.coordinates?.x !== 'number' || typeof match.coordinates?.y !== 'number') {
+          resolve(null);
+          return;
+        }
 
-      resolve({
-        matchedAddress: match.matchedAddress,
-        latitude: match.coordinates.y,
-        longitude: match.coordinates.x,
-      });
+        resolve({
+          matchedAddress: match.matchedAddress,
+          latitude: match.coordinates.y,
+          longitude: match.coordinates.x,
+        });
+      } catch {
+        resolve(null);
+      }
     };
 
     const url = `${CENSUS_GEOCODER_BASE_URL}?address=${encodeURIComponent(address)}&benchmark=Public_AR_Current&format=jsonp&callback=${callbackName}`;

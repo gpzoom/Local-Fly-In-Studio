@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { censusGeocode } from '../destination/censusGeocoder';
+import { censusGeocode, censusGeocoderProvider } from '../destination/censusGeocoder';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -15,6 +15,12 @@ function injectScriptResolvingWith(response: unknown) {
     return vi.fn();
   });
 }
+
+describe('censusGeocoderProvider', () => {
+  it('is wired to censusGeocode (the default geocoder resolveFromAddress falls back to)', () => {
+    expect(censusGeocoderProvider.geocode).toBe(censusGeocode);
+  });
+});
 
 describe('censusGeocode', () => {
   it('resolves a match from the JSONP callback', async () => {
@@ -70,6 +76,18 @@ describe('censusGeocode', () => {
     expect(result).toBeNull();
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('resolves null (does not hang or reject) when the callback fires with a malformed match missing coordinates', async () => {
+    const injectScript = injectScriptResolvingWith({
+      result: {
+        addressMatches: [{ matchedAddress: 'X' }], // missing `coordinates` entirely
+      },
+    });
+
+    const result = await censusGeocode('malformed address', { injectScript });
+
+    expect(result).toBeNull();
+  }, 1000);
 
   it('deletes the globalThis callback after resolving, leaving no leaked global', async () => {
     let capturedCallbackName = '';
