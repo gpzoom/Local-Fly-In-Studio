@@ -25,7 +25,10 @@ export async function extractImageMetadata(
 ): Promise<ExtractedMediaMetadata> {
   let result: ExifParseResult | undefined;
   try {
-    result = await parseExif(file, { gps: true, tiff: true, exif: true });
+    // translateValues: false is required so exifr returns Orientation as its raw numeric
+    // EXIF value (e.g. 6) instead of a translated human-readable string (e.g. "Rotate 90 CW").
+    // latitude/longitude and DateTimeOriginal are unaffected by this option.
+    result = await parseExif(file, { gps: true, tiff: true, exif: true, translateValues: false });
   } catch {
     return {};
   }
