@@ -165,6 +165,28 @@ describe('fitProjectToDuration', () => {
     expect(fittedTimeline.totalDurationMs).toBe(16000);
   });
 
+  it('compensates for the Map->Storefront and Storefront->Interior crossfade overlaps so the recompiled total hits the target', () => {
+    // Regression: the split used to ignore the two boundary crossfades the compiler subtracts
+    // during recompilation, so a 30000ms target compiled to ~28800ms (short by 600 + 600).
+    // The fixture's *default* 600ms crossfades are kept deliberately here.
+    const project = makeMinimalProject();
+    const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
+    const storefrontScene = project.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    mapScene.waypoints = [
+      makeWaypoint({ id: 'w0', holdDurationMs: 1000 }),
+      makeWaypoint({ id: 'w1', travelDurationMs: 1800, holdDurationMs: 600 }),
+    ];
+    expect(storefrontScene.transitionIn).toEqual({ type: 'crossfade', durationMs: 600 });
+    expect(storefrontScene.transitionOut).toEqual({ type: 'crossfade', durationMs: 600 });
+
+    const targetMs = 30000;
+    const fitted = fitProjectToDuration(project, targetMs);
+    const fittedTimeline = compileProjectTimeline(fitted);
+
+    // ±2ms: each of the map / storefront / interior duration assignments rounds independently.
+    expect(Math.abs(fittedTimeline.totalDurationMs - targetMs)).toBeLessThanOrEqual(2);
+  });
+
   it('keeps a locked Storefront duration exact and gives Map the remainder of the Map+Storefront split', () => {
     const project = makeMinimalProject();
     const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
