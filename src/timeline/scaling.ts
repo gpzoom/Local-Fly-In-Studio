@@ -29,7 +29,9 @@ export function fitMapToDuration(mapScene: MapScene, targetMs: number): MapScene
     else unlockedSum += wp.holdDurationMs;
   });
 
-  if (lockedSum >= targetMs) {
+  // Strictly greater: an exact fit (including the degenerate 0 === 0 case of a map scene
+  // with no waypoints) is not a conflict — there is simply nothing left to scale.
+  if (lockedSum > targetMs) {
     throw new TimelineScalingError(
       `Cannot fit map fly-in to ${targetMs}ms: locked durations alone total ${lockedSum}ms.`,
       targetMs,
@@ -62,7 +64,9 @@ export function fitInteriorTourToDuration(tourScene: InteriorTourScene, targetMs
   const unlockedPhotoSum = photos.filter((p) => !p.durationLocked).reduce((sum, p) => sum + p.durationMs, 0);
   const lockedSum = videoSum + lockedPhotoSum;
 
-  if (lockedSum >= targetMs) {
+  // Strictly greater: an exact fit (including the degenerate "nothing to scale" case) is
+  // not a conflict.
+  if (lockedSum > targetMs) {
     throw new TimelineScalingError(
       `Cannot fit interior tour to ${targetMs}ms: video clips and locked photo durations alone total ${lockedSum}ms.`,
       targetMs,

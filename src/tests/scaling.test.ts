@@ -108,6 +108,16 @@ describe('fitInteriorTourToDuration', () => {
 });
 
 describe('fitProjectToDuration', () => {
+  it('does not throw on the canonical fixture, whose map scene has no waypoints (degenerate exact-fit)', () => {
+    // Regression: the map scene of makeMinimalProject() has waypoints: [], so fitProjectToDuration
+    // hands fitMapToDuration a target of 0 with a locked sum of 0. That is a "nothing to scale"
+    // case, not a locked-durations conflict, and must not throw.
+    expect(() => fitProjectToDuration(makeMinimalProject(), 10000)).not.toThrow();
+    const fitted = fitProjectToDuration(makeMinimalProject(), 10000);
+    const fittedMap = fitted.scenes.find((s): s is MapScene => s.type === 'map')!;
+    expect(fittedMap.waypoints).toEqual([]);
+  });
+
   it('splits the target proportionally between Map+Storefront and Interior Tour, then within Map+Storefront', () => {
     const project = makeMinimalProject();
     const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;

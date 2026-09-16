@@ -124,8 +124,13 @@ export function compileProjectTimeline(project: Project): CompiledTimeline {
 
   for (const unit of units) {
     const transition = unit.incomingTransition;
+    // A transition only means something when there is a preceding segment to fade from or
+    // overlap with. The very first segment emitted in the whole timeline has nothing before
+    // it, so it never gets a fade-black lead-in and never gets crossfade overlap applied —
+    // otherwise its startMs would go negative and its leading content would be unreachable.
+    const hasPrecedingSegment = segments.length > 0;
 
-    if (transition?.type === 'fade-black' && transition.durationMs > 0) {
+    if (hasPrecedingSegment && transition?.type === 'fade-black' && transition.durationMs > 0) {
       segments.push({
         id: `black-${segmentCounter++}`,
         sourceType: 'image',
@@ -138,7 +143,7 @@ export function compileProjectTimeline(project: Project): CompiledTimeline {
       cursorMs += transition.durationMs;
     }
 
-    const overlapMs = transition?.type === 'crossfade' ? transition.durationMs : 0;
+    const overlapMs = hasPrecedingSegment && transition?.type === 'crossfade' ? transition.durationMs : 0;
     const startMs = cursorMs - overlapMs;
     const endMs = startMs + unit.durationMs;
 
@@ -166,6 +171,10 @@ export function compileProjectTimeline(project: Project): CompiledTimeline {
 
     cursorMs = endMs;
   }
+
+  // CompiledTimeline.segments is documented as sorted by startMs. A crossfade whose duration
+  // exceeds the incoming unit's own duration can emit segments out of order, so enforce it.
+  segments.sort((a, b) => a.startMs - b.startMs);
 
   const sections: CompiledTimelineSection[] = [];
   for (const scene of [mapScene, storefrontScene, interiorScene]) {
