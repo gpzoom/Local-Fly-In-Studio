@@ -100,11 +100,16 @@ export function fitProjectToDuration(project: Project, targetMs: number): Projec
   // When the project is recompiled, the compiler subtracts the Map->Storefront and
   // Storefront->Interior crossfade overlaps from the total. Split a target inflated by that
   // amount so the recompiled timeline lands back on the caller's requested targetMs.
+  // The Map->Storefront overlap only counts when the map actually emits segments: with no
+  // map segments the storefront is the first segment in the timeline, and the compiler
+  // never applies its incoming overlap at all.
   // Scope note: this compensates for the two scene *boundary* crossfades only — crossfades
   // between individual interior tour items are a separate limitation of
   // fitInteriorTourToDuration and are deliberately not handled here.
   const boundaryOverlapMs =
-    (storefrontScene?.transitionIn?.type === 'crossfade' ? storefrontScene.transitionIn.durationMs : 0) +
+    (currentMapSection !== undefined && storefrontScene?.transitionIn?.type === 'crossfade'
+      ? storefrontScene.transitionIn.durationMs
+      : 0) +
     (storefrontScene?.transitionOut?.type === 'crossfade' ? storefrontScene.transitionOut.durationMs : 0);
   const effectiveTargetMs = targetMs + boundaryOverlapMs;
 

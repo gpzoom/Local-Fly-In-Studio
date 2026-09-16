@@ -187,6 +187,24 @@ describe('fitProjectToDuration', () => {
     expect(Math.abs(fittedTimeline.totalDurationMs - targetMs)).toBeLessThanOrEqual(2);
   });
 
+  it('hits the target exactly for an empty-map project, whose storefront crossfade-in is never applied', () => {
+    // Regression for the interaction between the first-segment overlap gate in the compiler
+    // and the boundary-overlap compensation here: with no map segments the storefront is the
+    // first segment in the timeline, so the compiler never subtracts its incoming crossfade.
+    // Counting it anyway overshot the target by 600ms (and not compensating at all undershot
+    // by 600ms); only the transitionOut overlap is genuinely applied here.
+    const project = makeMinimalProject();
+    const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
+    const storefrontScene = project.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    expect(mapScene.waypoints).toEqual([]);
+    expect(storefrontScene.transitionIn).toEqual({ type: 'crossfade', durationMs: 600 });
+    expect(storefrontScene.transitionOut).toEqual({ type: 'crossfade', durationMs: 600 });
+
+    const targetMs = 10000;
+    const fitted = fitProjectToDuration(project, targetMs);
+    expect(compileProjectTimeline(fitted).totalDurationMs).toBe(targetMs);
+  });
+
   it('keeps a locked Storefront duration exact and gives Map the remainder of the Map+Storefront split', () => {
     const project = makeMinimalProject();
     const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
