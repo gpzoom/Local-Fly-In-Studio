@@ -55,12 +55,20 @@ export interface CompiledTimeline {
 }
 
 export interface EvaluatedLayer {
+  /** The timeline segment this layer was produced from. Disambiguates two layers that share a sourceId. */
+  segmentId: string;
   sourceType: 'map' | 'image' | 'video';
   sourceId: string;
+  kind: SegmentKind;
   localTimeMs: number;
   opacity: number;
   transform?: VisualTransform;
   camera?: CameraState;
+
+  /** Video layers only. */
+  fitMode?: FitMode;
+  /** Video layers only. */
+  audioEnabled?: boolean;
 }
 
 export interface EvaluatedFrame {

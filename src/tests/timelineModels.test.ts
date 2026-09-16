@@ -28,8 +28,8 @@ describe('timeline model types', () => {
     const frame: EvaluatedFrame = {
       projectTimeMs: 1000,
       layers: [
-        { sourceType: 'image', sourceId: 'a', localTimeMs: 500, opacity: 0.5 },
-        { sourceType: 'image', sourceId: 'b', localTimeMs: 0, opacity: 0.5 },
+        { segmentId: 'seg-1', sourceType: 'image', sourceId: 'a', kind: 'photo', localTimeMs: 500, opacity: 0.5 },
+        { segmentId: 'seg-2', sourceType: 'image', sourceId: 'b', kind: 'photo', localTimeMs: 0, opacity: 0.5 },
       ],
       activeSectionId: 'interior-1',
     };

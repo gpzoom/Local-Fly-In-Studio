@@ -23,7 +23,15 @@ function evaluateSegmentLayer(segment: TimelineSegment, timeMs: number): Evaluat
 
   if (segment.kind === 'map-hold') {
     const camera = segment.fromWaypoint?.type === 'absolute' ? segment.fromWaypoint.camera : undefined;
-    return { sourceType: 'map', sourceId: segment.sourceId, localTimeMs, opacity: 1, camera };
+    return {
+      segmentId: segment.id,
+      sourceType: 'map',
+      sourceId: segment.sourceId,
+      kind: segment.kind,
+      localTimeMs,
+      opacity: 1,
+      camera,
+    };
   }
 
   if (segment.kind === 'map-travel') {
@@ -34,7 +42,15 @@ function evaluateSegmentLayer(segment: TimelineSegment, timeMs: number): Evaluat
       from.type === 'absolute' && to.type === 'absolute'
         ? interpolateCameraState(from.camera, to.camera, eased)
         : undefined;
-    return { sourceType: 'map', sourceId: segment.sourceId, localTimeMs, opacity: 1, camera };
+    return {
+      segmentId: segment.id,
+      sourceType: 'map',
+      sourceId: segment.sourceId,
+      kind: segment.kind,
+      localTimeMs,
+      opacity: 1,
+      camera,
+    };
   }
 
   if (segment.kind === 'storefront' || segment.kind === 'photo') {
@@ -42,15 +58,39 @@ function evaluateSegmentLayer(segment: TimelineSegment, timeMs: number): Evaluat
       segment.startTransform && segment.endTransform
         ? interpolateTransform(segment.startTransform, segment.endTransform, rawT)
         : segment.startTransform;
-    return { sourceType: segment.sourceType, sourceId: segment.sourceId, localTimeMs, opacity: 1, transform };
+    return {
+      segmentId: segment.id,
+      sourceType: segment.sourceType,
+      sourceId: segment.sourceId,
+      kind: segment.kind,
+      localTimeMs,
+      opacity: 1,
+      transform,
+    };
   }
 
   if (segment.kind === 'video') {
     const videoLocalMs = (segment.trimStartMs ?? 0) + localTimeMs * (segment.playbackRate ?? 1);
-    return { sourceType: 'video', sourceId: segment.sourceId, localTimeMs: videoLocalMs, opacity: 1 };
+    return {
+      segmentId: segment.id,
+      sourceType: 'video',
+      sourceId: segment.sourceId,
+      kind: segment.kind,
+      localTimeMs: videoLocalMs,
+      opacity: 1,
+      fitMode: segment.fitMode,
+      audioEnabled: segment.audioEnabled,
+    };
   }
 
-  return { sourceType: 'image', sourceId: '__black__', localTimeMs, opacity: 1 };
+  return {
+    segmentId: segment.id,
+    sourceType: 'image',
+    sourceId: '__black__',
+    kind: segment.kind,
+    localTimeMs,
+    opacity: 1,
+  };
 }
 
 function isActiveAt(segment: TimelineSegment, timeMs: number, totalDurationMs: number): boolean {
