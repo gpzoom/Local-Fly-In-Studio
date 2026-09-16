@@ -1136,19 +1136,24 @@ describe('fitProjectToDuration', () => {
 
     mapScene.waypoints = [
       {
-        type: 'absolute', name: 'w0', camera: { longitude: 0, latitude: 0, height: 1000, heading: 0, pitch: -30, roll: 0 },
+        id: 'w0', type: 'absolute', name: 'w0', camera: { longitude: 0, latitude: 0, height: 1000, heading: 0, pitch: -30, roll: 0 },
         travelDurationMs: 0, holdDurationMs: 1000, travelDurationLocked: false, holdDurationLocked: false, easing: 'cinematic',
       },
       {
-        type: 'absolute', name: 'w1', camera: { longitude: 1, latitude: 1, height: 500, heading: 0, pitch: -30, roll: 0 },
+        id: 'w1', type: 'absolute', name: 'w1', camera: { longitude: 1, latitude: 1, height: 500, heading: 0, pitch: -30, roll: 0 },
         travelDurationMs: 1000, holdDurationMs: 0, travelDurationLocked: false, holdDurationLocked: false, easing: 'cinematic',
       },
     ]; // map total: 2000ms, all unlocked
     storefrontScene.durationMs = 2000; // unlocked
     storefrontScene.durationLocked = false;
-    interiorScene.items = [interiorScene.items[0]]; // one unlocked photo, durationMs: 4000 from the fixture
+    // Zero out the fixture's default crossfades so the compiled total equals the raw content-duration
+    // sum exactly — this test isolates the scaling *ratio* math, not the compiler's overlap accounting
+    // (which Task 4's compiler tests already cover separately).
+    storefrontScene.transitionIn = { type: 'cut', durationMs: 0 };
+    storefrontScene.transitionOut = { type: 'cut', durationMs: 0 };
+    interiorScene.items = [{ ...interiorScene.items[0], transitionToNext: { type: 'cut', durationMs: 0 } }];
 
-    // current total = 2000 (map) + 2000 (storefront) + 4000 (interior) = 8000ms
+    // current total = 2000 (map) + 2000 (storefront) + 4000 (interior) = 8000ms (no crossfade overlap, all cuts)
     const fitted = fitProjectToDuration(project, 16000);
 
     const fittedMap = fitted.scenes.find((s): s is MapScene => s.type === 'map')!;
@@ -1178,7 +1183,7 @@ describe('fitProjectToDuration', () => {
 
     mapScene.waypoints = [
       {
-        type: 'absolute', name: 'w0', camera: { longitude: 0, latitude: 0, height: 1000, heading: 0, pitch: -30, roll: 0 },
+        id: 'w0', type: 'absolute', name: 'w0', camera: { longitude: 0, latitude: 0, height: 1000, heading: 0, pitch: -30, roll: 0 },
         travelDurationMs: 0, holdDurationMs: 2000, travelDurationLocked: false, holdDurationLocked: false, easing: 'cinematic',
       },
     ]; // map total: 2000ms, unlocked
