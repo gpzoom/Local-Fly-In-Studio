@@ -5,6 +5,9 @@ export interface DeviceLocationResult {
 
 export type GetCurrentPosition = Pick<Geolocation, 'getCurrentPosition'>;
 
+// NOTE: unlike its sibling resolver functions (censusGeocode/resolveFromAddress and everything
+// in media/), this function REJECTS on failure (permission denied, timeout) instead of resolving
+// to a null/empty result. This is deliberate, so callers can distinguish failure modes.
 export async function getDeviceLocation(
   geo: GetCurrentPosition = navigator.geolocation,
   timeoutMs = 10000,

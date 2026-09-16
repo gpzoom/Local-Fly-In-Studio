@@ -14,6 +14,8 @@ export function resolveFromPhotoGps(metadata: ExtractedMediaMetadata): Destinati
   };
 }
 
+// NOTE: rejects on failure (via getDeviceLocation), unlike resolveFromAddress/resolveManual/
+// resolveFromPhotoGps, which resolve to a null/empty result instead of throwing.
 export async function resolveFromDeviceLocation(geo?: GetCurrentPosition): Promise<Destination> {
   const location = await getDeviceLocation(geo);
   return {

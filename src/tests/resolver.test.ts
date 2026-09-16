@@ -17,6 +17,10 @@ describe('resolveFromPhotoGps', () => {
   it('returns null when metadata has no coordinates', () => {
     expect(resolveFromPhotoGps({})).toBeNull();
   });
+
+  it('returns null when only latitude is present (both are required, not just one)', () => {
+    expect(resolveFromPhotoGps({ latitude: 40.7128 })).toBeNull();
+  });
 });
 
 describe('resolveFromDeviceLocation', () => {
