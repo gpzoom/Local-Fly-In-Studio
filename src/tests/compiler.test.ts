@@ -119,4 +119,35 @@ describe('compileProjectTimeline', () => {
     const nextSegment = timeline.segments.find((s) => s.startMs === black.endMs && s.kind !== 'black');
     expect(nextSegment).toBeDefined();
   });
+
+  it('reports totalDurationMs as the true maximum segment end, not the last cursor position, when a crossfade duration exceeds the incoming segment\'s own duration', () => {
+    const project = makeMinimalProject();
+    const storefrontScene = project.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    storefrontScene.transitionIn = { type: 'cut', durationMs: 0 };
+    storefrontScene.transitionOut = { type: 'cut', durationMs: 0 };
+    storefrontScene.durationMs = 2000;
+    const interiorScene = project.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour')!;
+    interiorScene.items = [
+      {
+        id: 'p1', type: 'photo', assetId: 'a1', durationMs: 4000, durationLocked: false,
+        startTransform: { centerX: 0.5, centerY: 0.5, scale: 1 }, endTransform: { centerX: 0.5, centerY: 0.5, scale: 1.05 },
+        motionPreset: 'push-in', transitionToNext: { type: 'crossfade', durationMs: 5000 },
+      },
+      {
+        id: 'p2', type: 'photo', assetId: 'a2', durationMs: 1000, durationLocked: false,
+        startTransform: { centerX: 0.5, centerY: 0.5, scale: 1 }, endTransform: { centerX: 0.5, centerY: 0.5, scale: 1.05 },
+        motionPreset: 'pull-out', transitionToNext: { type: 'cut', durationMs: 0 },
+      },
+    ];
+    const timeline = compileProjectTimeline(project);
+    const p1 = timeline.segments.find((s) => s.itemId === 'p1')!;
+    const p2 = timeline.segments.find((s) => s.itemId === 'p2')!;
+    // p2's incoming crossfade (5000ms) exceeds its own duration (1000ms), so p2 both
+    // starts and ends before p1 does. A naive "last processed cursor" total would
+    // report p2.endMs (an earlier, smaller time) instead of the true maximum.
+    expect(p2.endMs).toBeLessThan(p1.endMs);
+    const trueMaxEndMs = Math.max(...timeline.segments.map((s) => s.endMs));
+    expect(timeline.totalDurationMs).toBe(trueMaxEndMs);
+    expect(timeline.totalDurationMs).toBe(p1.endMs);
+  });
 });

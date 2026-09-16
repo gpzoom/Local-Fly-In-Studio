@@ -180,5 +180,9 @@ export function compileProjectTimeline(project: Project): CompiledTimeline {
     });
   }
 
-  return { segments, totalDurationMs: cursorMs, sections };
+  return {
+    segments,
+    totalDurationMs: Math.max(...segments.map((s) => s.endMs), 0),
+    sections,
+  };
 }
