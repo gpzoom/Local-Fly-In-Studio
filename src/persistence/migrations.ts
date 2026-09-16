@@ -6,14 +6,19 @@ export interface Migration {
   migrate: (data: Record<string, unknown>) => Record<string, unknown>;
 }
 
-let migrations: Migration[] = [];
+// Add new migrations here as schemaVersion increases. This is the single
+// production registration point for migrations — nothing else registers
+// migrations outside of tests.
+const MIGRATIONS: Migration[] = [];
+
+let migrations: Migration[] = [...MIGRATIONS];
 
 export function registerMigration(migration: Migration): void {
   migrations.push(migration);
 }
 
 export function resetMigrationsForTesting(): void {
-  migrations = [];
+  migrations = [...MIGRATIONS];
 }
 
 function readVersion(data: Record<string, unknown>): number {
@@ -34,6 +39,11 @@ export function migrateProjectData(data: Record<string, unknown>): Record<string
     const migration = migrations.find((m) => m.fromVersion === currentVersion);
     if (!migration) {
       throw new Error(`No migration found from schema version ${currentVersion}.`);
+    }
+    if (migration.toVersion <= currentVersion) {
+      throw new Error(
+        `Migration from version ${currentVersion} does not advance the schema version (toVersion: ${migration.toVersion}).`
+      );
     }
     current = migration.migrate(current);
     currentVersion = migration.toVersion;

@@ -1,13 +1,13 @@
 import { getDb } from '../persistence/db';
 import type { MediaAssetStore, StoredMediaAsset } from './MediaAssetStore';
 
-interface StoredMediaRecord {
+type StoredMediaRecord = {
   id: string;
   blob: Blob;
   filename: string;
   mimeType: string;
   sizeBytes: number;
-}
+};
 
 export function createIndexedDbMediaStore(): MediaAssetStore {
   return {
@@ -21,7 +21,7 @@ export function createIndexedDbMediaStore(): MediaAssetStore {
         mimeType: file.type,
         sizeBytes: file.size,
       };
-      await db.put('mediaAssets', record as unknown as Record<string, unknown>);
+      await db.put('mediaAssets', record);
       return {
         id,
         storageLocation: 'indexeddb',

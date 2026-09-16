@@ -4,7 +4,7 @@ import { migrateProjectData } from './migrations';
 
 export async function saveProject(project: Project): Promise<void> {
   const db = await getDb();
-  await db.put('projects', project as unknown as Record<string, unknown>);
+  await db.put('projects', project);
 }
 
 export async function loadProject(id: string): Promise<Project | null> {

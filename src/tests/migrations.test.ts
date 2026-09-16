@@ -36,4 +36,14 @@ describe('migrateProjectData', () => {
     const future = { schemaVersion: 99, projectName: 'From the future' };
     expect(() => migrateProjectData(future)).toThrow(/newer schema version/i);
   });
+
+  it('throws synchronously instead of looping forever when a migration does not advance the schema version', () => {
+    registerMigration({
+      fromVersion: 0,
+      toVersion: 0,
+      migrate: (data) => ({ ...data }),
+    });
+    const legacy = { schemaVersion: 0, projectName: 'Stuck in a loop' };
+    expect(() => migrateProjectData(legacy)).toThrow(/does not advance the schema version/i);
+  });
 });
