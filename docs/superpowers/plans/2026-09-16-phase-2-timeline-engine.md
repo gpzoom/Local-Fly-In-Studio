@@ -1019,8 +1019,10 @@ git commit -m "feat: add deterministic master timeline evaluator"
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { fitMapToDuration, fitInteriorTourToDuration, TimelineScalingError } from '../timeline/scaling';
-import type { MapScene, InteriorTourScene, Waypoint } from '../models/scenes';
+import { fitMapToDuration, fitInteriorTourToDuration, fitProjectToDuration, TimelineScalingError } from '../timeline/scaling';
+import { compileProjectTimeline } from '../timeline/compiler';
+import { makeMinimalProject } from './fixtures';
+import type { MapScene, StorefrontScene, InteriorTourScene, Waypoint } from '../models/scenes';
 
 function makeWaypoint(overrides: Partial<Waypoint> & { id: string }): Waypoint {
   return {
@@ -1122,6 +1124,71 @@ describe('fitInteriorTourToDuration', () => {
       ],
     };
     expect(() => fitInteriorTourToDuration(tourScene, 5000)).toThrow(TimelineScalingError);
+  });
+});
+
+describe('fitProjectToDuration', () => {
+  it('splits the target proportionally between Map+Storefront and Interior Tour, then within Map+Storefront', () => {
+    const project = makeMinimalProject();
+    const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
+    const storefrontScene = project.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    const interiorScene = project.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour')!;
+
+    mapScene.waypoints = [
+      {
+        type: 'absolute', name: 'w0', camera: { longitude: 0, latitude: 0, height: 1000, heading: 0, pitch: -30, roll: 0 },
+        travelDurationMs: 0, holdDurationMs: 1000, travelDurationLocked: false, holdDurationLocked: false, easing: 'cinematic',
+      },
+      {
+        type: 'absolute', name: 'w1', camera: { longitude: 1, latitude: 1, height: 500, heading: 0, pitch: -30, roll: 0 },
+        travelDurationMs: 1000, holdDurationMs: 0, travelDurationLocked: false, holdDurationLocked: false, easing: 'cinematic',
+      },
+    ]; // map total: 2000ms, all unlocked
+    storefrontScene.durationMs = 2000; // unlocked
+    storefrontScene.durationLocked = false;
+    interiorScene.items = [interiorScene.items[0]]; // one unlocked photo, durationMs: 4000 from the fixture
+
+    // current total = 2000 (map) + 2000 (storefront) + 4000 (interior) = 8000ms
+    const fitted = fitProjectToDuration(project, 16000);
+
+    const fittedMap = fitted.scenes.find((s): s is MapScene => s.type === 'map')!;
+    const fittedStorefront = fitted.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    const fittedInterior = fitted.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour')!;
+
+    // Map+Storefront keeps its current 50% share of the total (4000/8000), scaled to 8000ms of the 16000ms target;
+    // within that, Storefront keeps its current 50% share of Map+Storefront (2000/4000), so each lands at 4000ms.
+    expect(fittedStorefront.durationMs).toBe(4000);
+    const fittedMapTotalMs = fittedMap.waypoints.reduce((sum, wp, i) => sum + (i > 0 ? wp.travelDurationMs : 0) + wp.holdDurationMs, 0);
+    expect(fittedMapTotalMs).toBe(4000);
+    // Interior Tour gets the remaining 8000ms (its one unlocked photo doubles from 4000 to 8000).
+    expect(fittedInterior.items[0].type).toBe('photo');
+    if (fittedInterior.items[0].type === 'photo') {
+      expect(fittedInterior.items[0].durationMs).toBe(8000);
+    }
+
+    const fittedTimeline = compileProjectTimeline(fitted);
+    expect(fittedTimeline.totalDurationMs).toBe(16000);
+  });
+
+  it('keeps a locked Storefront duration exact and gives Map the remainder of the Map+Storefront split', () => {
+    const project = makeMinimalProject();
+    const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
+    const storefrontScene = project.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    const interiorScene = project.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour')!;
+
+    mapScene.waypoints = [
+      {
+        type: 'absolute', name: 'w0', camera: { longitude: 0, latitude: 0, height: 1000, heading: 0, pitch: -30, roll: 0 },
+        travelDurationMs: 0, holdDurationMs: 2000, travelDurationLocked: false, holdDurationLocked: false, easing: 'cinematic',
+      },
+    ]; // map total: 2000ms, unlocked
+    storefrontScene.durationMs = 2000;
+    storefrontScene.durationLocked = true; // locked — must remain exactly 2000ms
+    interiorScene.items = [interiorScene.items[0]];
+
+    const fitted = fitProjectToDuration(project, 20000);
+    const fittedStorefront = fitted.scenes.find((s): s is StorefrontScene => s.type === 'storefront')!;
+    expect(fittedStorefront.durationMs).toBe(2000);
   });
 });
 ```
@@ -1254,7 +1321,7 @@ export function fitProjectToDuration(project: Project, targetMs: number): Projec
 - [ ] **Step 4: Run tests, verify pass**
 
 Run: `npm run test -- scaling.test.ts`
-Expected: PASS, all 5 tests green.
+Expected: PASS, all 7 tests green.
 
 - [ ] **Step 5: Run the full test suite and build**
 
