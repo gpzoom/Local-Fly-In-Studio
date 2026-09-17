@@ -15,14 +15,28 @@ interface PreviewStageProps {
   project: Project;
 }
 
+/** Separator used to build a stable dependency key from a list of sourceIds. */
+const SOURCE_ID_SEPARATOR = '\n';
+
 function transformToCss(transform?: VisualTransform): string {
-  if (!transform) return '';
+  // The overlay image is positioned at top/left: 50%, so the centering translate is
+  // always required — even when a layer carries no transform of its own.
+  if (!transform) return 'translate(-50%, -50%)';
   const rotation = transform.rotation ?? 0;
   return `translate(-50%, -50%) translate(${(transform.centerX - 0.5) * 100}%, ${(transform.centerY - 0.5) * 100}%) scale(${transform.scale}) rotate(${rotation}deg)`;
 }
 
-function overlayLayer(layers: EvaluatedLayer[]): EvaluatedLayer | undefined {
-  return layers.find((layer) => layer.kind !== 'map-hold' && layer.kind !== 'map-travel');
+function isMapLayer(layer: EvaluatedLayer): boolean {
+  return layer.kind === 'map-hold' || layer.kind === 'map-travel';
+}
+
+/**
+ * Every non-map layer active in this frame. During a crossfade the evaluator emits
+ * TWO simultaneously-active layers (outgoing fading 1 -> 0, incoming 0 -> 1); all of
+ * them must be rendered, each with its own opacity and media.
+ */
+function overlayLayers(layers: EvaluatedLayer[]): EvaluatedLayer[] {
+  return layers.filter((layer) => !isMapLayer(layer));
 }
 
 export function PreviewStage({ project }: PreviewStageProps) {
@@ -30,13 +44,16 @@ export function PreviewStage({ project }: PreviewStageProps) {
   const cesiumContainerRef = useRef<HTMLDivElement | null>(null);
   const viewerHandleRef = useRef<CesiumViewerHandle | null>(null);
   const controllerRef = useRef<PlaybackController | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStoreRef = useRef<MediaAssetStore | null>(null);
+  /** segmentId -> mounted <video>, so each active video layer can be seeked independently. */
+  const videoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  /** sourceId -> blob: URL. Mutable source of truth; `overlayUrls` mirrors it for rendering. */
+  const urlCacheRef = useRef<Map<string, string>>(new Map());
 
   const [frame, setFrame] = useState<EvaluatedFrame | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
-  const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
+  const [overlayUrls, setOverlayUrls] = useState<ReadonlyMap<string, string>>(() => new Map());
 
   useEffect(() => {
     if (!cesiumContainerRef.current) return;
@@ -62,47 +79,92 @@ export function PreviewStage({ project }: PreviewStageProps) {
 
   useEffect(() => {
     if (!frame || !viewerHandleRef.current) return;
-    const mapLayer = frame.layers.find((layer) => layer.kind === 'map-hold' || layer.kind === 'map-travel');
+    const mapLayer = frame.layers.find(isMapLayer);
     if (mapLayer?.camera) {
       applyCameraState(viewerHandleRef.current.viewer, mapLayer.camera);
     }
   }, [frame]);
 
-  const overlay = frame ? overlayLayer(frame.layers) : undefined;
-  const overlaySourceId = overlay && overlay.kind !== 'black' ? overlay.sourceId : undefined;
+  const activeOverlays = useMemo(() => (frame ? overlayLayers(frame.layers) : []), [frame]);
+  const hasMapLayer = frame?.layers.some(isMapLayer) ?? false;
 
-  // Resolves the active overlay layer's MediaAsset into a displayable blob: URL via
-  // the Phase 1 MediaAssetStore. Re-runs only when the underlying asset changes (not
-  // on every animation frame), and always revokes the previous object URL.
+  // The set of media assets the current frame needs, as a stable string so the
+  // resolution effect re-runs only at segment boundaries — not on every frame.
+  const neededSourceIdKey = useMemo(() => {
+    const ids = new Set<string>();
+    for (const layer of activeOverlays) {
+      if (layer.kind === 'black') continue;
+      ids.add(layer.sourceId);
+    }
+    return [...ids].sort().join(SOURCE_ID_SEPARATOR);
+  }, [activeOverlays]);
+
+  const neededSourceIds = useMemo(
+    () => (neededSourceIdKey === '' ? [] : neededSourceIdKey.split(SOURCE_ID_SEPARATOR)),
+    [neededSourceIdKey],
+  );
+
+  // Resolves every active overlay layer's MediaAsset into a displayable blob: URL via
+  // the Phase 1 MediaAssetStore, cached by sourceId. A cached URL is evicted (and
+  // revoked) only once no currently-active layer needs it, so a crossfade's outgoing
+  // image keeps a valid src while the incoming one is still resolving.
   useEffect(() => {
     let cancelled = false;
-    let objectUrl: string | null = null;
+    const cache = urlCacheRef.current;
 
-    void (async () => {
-      if (!overlaySourceId) {
-        if (!cancelled) setOverlayUrl(null);
-        return;
-      }
-      if (!mediaStoreRef.current) {
-        mediaStoreRef.current = await createMediaAssetStore();
-      }
-      const blob = await mediaStoreRef.current.get(overlaySourceId);
-      if (cancelled || !blob) return;
-      objectUrl = URL.createObjectURL(blob);
-      setOverlayUrl(objectUrl);
-    })();
+    let evicted = false;
+    for (const [sourceId, url] of [...cache]) {
+      if (neededSourceIds.includes(sourceId)) continue;
+      URL.revokeObjectURL(url);
+      cache.delete(sourceId);
+      evicted = true;
+    }
+    if (evicted) setOverlayUrls(new Map(cache));
+
+    const missing = neededSourceIds.filter((sourceId) => !cache.has(sourceId));
+    if (missing.length > 0) {
+      void (async () => {
+        if (!mediaStoreRef.current) {
+          mediaStoreRef.current = await createMediaAssetStore();
+        }
+        const store = mediaStoreRef.current;
+        for (const sourceId of missing) {
+          const blob = await store.get(sourceId);
+          // Guard against a stale resolution landing after the frame moved on.
+          if (cancelled) return;
+          if (!blob || cache.has(sourceId)) continue;
+          cache.set(sourceId, URL.createObjectURL(blob));
+          setOverlayUrls(new Map(cache));
+        }
+      })();
+    }
 
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [overlaySourceId]);
+  }, [neededSourceIds]);
 
+  // Revoke every cached object URL when the stage goes away.
   useEffect(() => {
-    if (overlay?.kind === 'video' && videoRef.current) {
-      videoRef.current.currentTime = overlay.localTimeMs / 1000;
+    const cache = urlCacheRef.current;
+    return () => {
+      for (const url of cache.values()) {
+        URL.revokeObjectURL(url);
+      }
+      cache.clear();
+    };
+  }, []);
+
+  // Seek every active video layer (there can be more than one during a crossfade).
+  useEffect(() => {
+    for (const layer of activeOverlays) {
+      if (layer.kind !== 'video') continue;
+      const element = videoElementsRef.current.get(layer.segmentId);
+      if (element) {
+        element.currentTime = layer.localTimeMs / 1000;
+      }
     }
-  }, [overlay]);
+  }, [activeOverlays]);
 
   function handleTogglePlay() {
     const controller = controllerRef.current;
@@ -117,24 +179,48 @@ export function PreviewStage({ project }: PreviewStageProps) {
   return (
     <div className="preview-stage">
       <div ref={cesiumContainerRef} className="preview-cesium-container" />
-      {overlay?.kind === 'black' && <div className="preview-black-overlay" style={{ opacity: overlay.opacity }} />}
-      {(overlay?.kind === 'storefront' || overlay?.kind === 'photo') && overlayUrl && (
-        <img
-          className="preview-overlay-image"
-          src={overlayUrl}
-          alt=""
-          style={{ opacity: overlay.opacity, transform: transformToCss(overlay.transform) }}
-        />
-      )}
-      {overlay?.kind === 'video' && overlayUrl && (
-        <video
-          ref={videoRef}
-          className="preview-overlay-video"
-          src={overlayUrl}
-          style={{ opacity: overlay.opacity }}
-          muted={!overlay.audioEnabled}
-        />
-      )}
+      {/* Opaque backdrop so the globe never shows through an overlay's letterbox bars
+          while no map layer is on screen. Sits above Cesium, below the overlays. */}
+      {!hasMapLayer && <div className="preview-black-overlay" />}
+      {activeOverlays.map((layer) => {
+        if (layer.kind === 'black') {
+          return (
+            <div key={layer.segmentId} className="preview-black-overlay" style={{ opacity: layer.opacity }} />
+          );
+        }
+
+        const url = overlayUrls.get(layer.sourceId);
+        if (!url) return null;
+
+        if (layer.kind === 'video') {
+          return (
+            <video
+              key={layer.segmentId}
+              ref={(element) => {
+                if (element) {
+                  videoElementsRef.current.set(layer.segmentId, element);
+                } else {
+                  videoElementsRef.current.delete(layer.segmentId);
+                }
+              }}
+              className="preview-overlay-video"
+              src={url}
+              style={{ opacity: layer.opacity, objectFit: layer.fitMode ?? 'contain' }}
+              muted={!layer.audioEnabled}
+            />
+          );
+        }
+
+        return (
+          <img
+            key={layer.segmentId}
+            className="preview-overlay-image"
+            src={url}
+            alt=""
+            style={{ opacity: layer.opacity, transform: transformToCss(layer.transform) }}
+          />
+        );
+      })}
       <PlaybackControls
         isPlaying={isPlaying}
         currentTimeMs={currentTimeMs}
