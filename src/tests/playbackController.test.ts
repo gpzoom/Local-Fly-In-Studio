@@ -121,6 +121,27 @@ describe('PlaybackController', () => {
     controller.destroy();
   });
 
+  it('sets isPlaying to false before the final notification fires, not after', () => {
+    const scheduler = makeFakeScheduler();
+    const clock = makeFakeClock(0);
+    const controller = new PlaybackController(timeline, {
+      requestAnimationFrame: scheduler.requestAnimationFrame,
+      cancelAnimationFrame: scheduler.cancelAnimationFrame,
+      now: clock.now,
+    });
+    let isPlayingDuringFinalNotify: boolean | undefined;
+    controller.subscribe(() => {
+      isPlayingDuringFinalNotify = controller.isPlaying;
+    });
+
+    controller.play();
+    clock.advance(timeline.totalDurationMs + 5000);
+    scheduler.fireFrame(timeline.totalDurationMs + 5000);
+
+    expect(isPlayingDuringFinalNotify).toBe(false);
+    controller.destroy();
+  });
+
   it('notifies multiple subscribers on every notification', () => {
     const controller = new PlaybackController(timeline);
     const a = vi.fn();

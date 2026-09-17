@@ -92,11 +92,14 @@ export class PlaybackController {
     const deltaMs = currentNow - this.lastTickAt;
     this.lastTickAt = currentNow;
     this.timeMs = clamp(this.timeMs + deltaMs, 0, this.timeline.totalDurationMs);
-    this.notify();
+    // Pause BEFORE the final notify() so subscribers observe isPlaying === false on
+    // the very frame playback ends (otherwise a Play/Pause button never resets).
     if (this.timeMs >= this.timeline.totalDurationMs) {
       this.pause();
+      this.notify();
       return;
     }
+    this.notify();
     this.frameHandle = this.raf(this.tick);
   };
 
