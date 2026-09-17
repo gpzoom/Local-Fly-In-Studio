@@ -22,6 +22,7 @@ export function PlaybackControls({
       </button>
       <input
         type="range"
+        aria-label="Seek"
         min={0}
         max={totalDurationMs}
         value={currentTimeMs}

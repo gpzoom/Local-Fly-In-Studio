@@ -169,6 +169,9 @@ function applyDefaultInteriorOrdering(items: InteriorTourItem[]): InteriorTourIt
   return [...items];
 }
 
+// Intentionally redundant with importInteriorPhoto's initial `motionPreset`: this is
+// the explicit, idempotent guarantee that every photo gets the default motion, so a
+// future change to that placeholder value cannot silently change the draft default.
 function applyDefaultPhotoMotion(items: InteriorTourItem[]): void {
   for (const item of items) {
     if (item.type === 'photo') {
@@ -178,8 +181,10 @@ function applyDefaultPhotoMotion(items: InteriorTourItem[]): void {
 }
 
 function applyDefaultTransitions(items: InteriorTourItem[]): void {
-  const defaultTransition: Transition = { type: 'crossfade', durationMs: 500 };
   for (const item of items) {
+    // A fresh object per item — a shared reference would let 4b's editing UI change
+    // one item's transition and silently change every other item's too.
+    const defaultTransition: Transition = { type: 'crossfade', durationMs: 500 };
     item.transitionToNext = defaultTransition;
   }
 }

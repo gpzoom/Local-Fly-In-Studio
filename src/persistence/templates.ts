@@ -1,17 +1,21 @@
 import type { Destination } from '../models/project';
 import type { MapScene, Waypoint } from '../models/scenes';
 
-const EARTH_OVERVIEW_WAYPOINT: Waypoint = {
-  id: 'template-earth',
-  name: 'Earth',
-  type: 'absolute',
-  camera: { longitude: 0, latitude: 0, height: 20_000_000, heading: 0, pitch: -90, roll: 0 },
-  travelDurationMs: 0,
-  holdDurationMs: 1000,
-  travelDurationLocked: false,
-  holdDurationLocked: false,
-  easing: 'cinematic',
-};
+// A factory, not a shared constant: each MapScene must own its waypoint objects so
+// editing one draft's Earth waypoint (4b) cannot mutate every other draft's.
+function createEarthOverviewWaypoint(): Waypoint {
+  return {
+    id: 'template-earth',
+    name: 'Earth',
+    type: 'absolute',
+    camera: { longitude: 0, latitude: 0, height: 20_000_000, heading: 0, pitch: -90, roll: 0 },
+    travelDurationMs: 0,
+    holdDurationMs: 1000,
+    travelDurationLocked: false,
+    holdDurationLocked: false,
+    easing: 'cinematic',
+  };
+}
 
 interface RelativeStop {
   id: string;
@@ -38,7 +42,7 @@ const RELATIVE_STOPS: RelativeStop[] = [
 
 export function createMapSceneFromTemplate(destination: Destination): MapScene {
   const waypoints: Waypoint[] = [
-    EARTH_OVERVIEW_WAYPOINT,
+    createEarthOverviewWaypoint(),
     ...RELATIVE_STOPS.map(
       (stop): Waypoint => ({
         id: stop.id,
