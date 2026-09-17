@@ -3,19 +3,21 @@ import './TimelineStrip.css';
 import { compileProjectTimeline } from '../../timeline/compiler';
 import { useUiStore } from '../../store/uiStore';
 import { WaypointBlocks } from './WaypointBlocks';
+import { InteriorItemBlocks } from './InteriorItemBlocks';
 import type { Project } from '../../models/project';
 import type { MapScene, StorefrontScene, InteriorTourScene } from '../../models/scenes';
 
 interface TimelineStripProps {
   project: Project;
   onSeek: (timeMs: number) => void;
+  updateProject: (updater: (project: Project) => Project) => void;
 }
 
 function seconds(ms: number): number {
   return Math.round(ms / 1000);
 }
 
-export function TimelineStrip({ project, onSeek }: TimelineStripProps) {
+export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripProps) {
   const timeline = useMemo(() => compileProjectTimeline(project), [project]);
   const expandedSection = useUiStore((state) => state.expandedSection);
   const toggleExpanded = useUiStore((state) => state.toggleExpanded);
@@ -61,6 +63,14 @@ export function TimelineStrip({ project, onSeek }: TimelineStripProps) {
       </div>
       {expandedSection === 'map' && mapScene && (
         <WaypointBlocks mapScene={mapScene} timeline={timeline} onSeek={onSeek} />
+      )}
+      {expandedSection === 'interior-tour' && interiorScene && (
+        <InteriorItemBlocks
+          interiorScene={interiorScene}
+          timeline={timeline}
+          updateProject={updateProject}
+          onSeek={onSeek}
+        />
       )}
     </div>
   );
