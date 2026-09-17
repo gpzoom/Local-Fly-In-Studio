@@ -5,10 +5,24 @@ import type { EvaluatedFrame, EvaluatedLayer } from '../models/timeline';
 
 function createFakeCtx() {
   const calls: { method: string; args: unknown[] }[] = [];
-  const ctx: Record<string, unknown> = { fillStyle: '', globalAlpha: 1 };
+  const ctx: Record<string, unknown> = { fillStyle: '' };
   const record = (method: string) => (...args: unknown[]) => {
     calls.push({ method, args });
   };
+  // globalAlpha is a plain property on the real 2D context, so a plain property on the fake would
+  // record nothing and every `ctx.globalAlpha = layer.opacity` in frameCompositor would go
+  // completely unverified. Expose it as a getter/setter that pushes each write into the SAME
+  // `calls` array, so opacity assignments are asserted in call order alongside save/restore.
+  let globalAlpha = 1;
+  Object.defineProperty(ctx, 'globalAlpha', {
+    get: () => globalAlpha,
+    set: (value: number) => {
+      globalAlpha = value;
+      calls.push({ method: 'set globalAlpha', args: [value] });
+    },
+    enumerable: true,
+    configurable: true,
+  });
   ctx.fillRect = vi.fn(record('fillRect'));
   ctx.drawImage = vi.fn(record('drawImage'));
   ctx.save = vi.fn(record('save'));
@@ -129,5 +143,76 @@ describe('compositeFrame', () => {
     };
     expect(() => compositeFrame(ctx, frame, {} as HTMLCanvasElement, new Map(), 200, 200)).not.toThrow();
     expect(calls.some((c) => c.method === 'drawImage')).toBe(false);
+  });
+
+  it('applies each layer its own globalAlpha across a two-layer crossfade frame', () => {
+    const { ctx, calls } = createFakeCtx();
+    const img = { naturalWidth: 400, naturalHeight: 200 } as HTMLImageElement;
+    const video = { videoWidth: 1000, videoHeight: 500 } as HTMLVideoElement;
+    // Matches what evaluateProjectTimeline produces for an overlap: layers[0].opacity = 1 - t
+    // (outgoing) and layers[1].opacity = t (incoming), both present in frame.layers at once.
+    const t = 0.3;
+    const frame: EvaluatedFrame = {
+      projectTimeMs: 1000,
+      layers: [
+        layer({ kind: 'photo', sourceId: 'outgoing-photo', transform: undefined, opacity: 1 - t }),
+        layer({
+          segmentId: 'seg-2',
+          kind: 'video',
+          sourceType: 'video',
+          sourceId: 'incoming-video',
+          fitMode: 'cover',
+          transform: undefined,
+          opacity: t,
+        }),
+      ],
+      activeSectionId: 'interior-scene',
+    };
+    const mediaElements = new Map<string, HTMLImageElement | HTMLVideoElement>([
+      ['outgoing-photo', img],
+      ['incoming-video', video],
+    ]);
+    compositeFrame(ctx, frame, {} as HTMLCanvasElement, mediaElements, 400, 400);
+
+    const alphaWrites = calls.filter((c) => c.method === 'set globalAlpha').map((c) => c.args[0]);
+    expect(alphaWrites).toEqual([0.7, 0.3]);
+
+    // Each layer's alpha must be scoped inside its own save/restore pair, and the pairs balanced.
+    const saveCount = calls.filter((c) => c.method === 'save').length;
+    const restoreCount = calls.filter((c) => c.method === 'restore').length;
+    expect(saveCount).toBe(2);
+    expect(restoreCount).toBe(saveCount);
+    expect(calls.map((c) => c.method)).toEqual([
+      'fillRect',
+      'save',
+      'set globalAlpha',
+      'translate',
+      'rotate',
+      'scale',
+      'drawImage',
+      'restore',
+      'save',
+      'set globalAlpha',
+      'drawImage',
+      'restore',
+    ]);
+  });
+
+  it('sets globalAlpha to the layer opacity for map and black layers', () => {
+    const { ctx, calls } = createFakeCtx();
+    const cesiumCanvas = { width: 800, height: 450 } as HTMLCanvasElement;
+    const frame: EvaluatedFrame = {
+      projectTimeMs: 0,
+      layers: [
+        layer({ segmentId: 'seg-map', kind: 'map-travel', sourceType: 'map', sourceId: 'map', opacity: 0.6 }),
+        layer({ segmentId: 'seg-black', kind: 'black', sourceId: '__black__', opacity: 0.4 }),
+      ],
+      activeSectionId: 'map-scene',
+    };
+    compositeFrame(ctx, frame, cesiumCanvas, new Map(), 1920, 1080);
+
+    expect(calls.filter((c) => c.method === 'set globalAlpha').map((c) => c.args[0])).toEqual([0.6, 0.4]);
+    expect(calls.filter((c) => c.method === 'save')).toHaveLength(2);
+    expect(calls.filter((c) => c.method === 'restore')).toHaveLength(2);
   });
 });

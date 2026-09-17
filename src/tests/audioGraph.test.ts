@@ -10,7 +10,13 @@ class FakeMediaStreamAudioDestinationNode {
   stream = { __fakeStream: true } as unknown as MediaStream;
 }
 
-function createFakeAudioContextCtor(options: { throwOnConstruct?: boolean } = {}) {
+function createFakeAudioContextCtor(
+  options: {
+    throwOnConstruct?: boolean;
+    throwOnCreateDestination?: boolean;
+    throwOnCreateSourceAtIndex?: number;
+  } = {},
+) {
   const createdSourceNodes: FakeMediaElementAudioSourceNode[] = [];
   const closeFn = vi.fn().mockResolvedValue(undefined);
   const destinationNode = new FakeMediaStreamAudioDestinationNode();
@@ -21,9 +27,13 @@ function createFakeAudioContextCtor(options: { throwOnConstruct?: boolean } = {}
       if (options.throwOnConstruct) throw new Error('AudioContext not allowed');
     }
     createMediaStreamDestination() {
+      if (options.throwOnCreateDestination) throw new Error('InvalidStateError');
       return destinationNode;
     }
     createMediaElementSource(_element: HTMLVideoElement) {
+      if (options.throwOnCreateSourceAtIndex === createdSourceNodes.length) {
+        throw new Error('InvalidStateError');
+      }
       const node = new FakeMediaElementAudioSourceNode();
       createdSourceNodes.push(node);
       return node;
@@ -78,6 +88,31 @@ describe('createExportAudioGraph', () => {
     const { FakeAudioContext } = createFakeAudioContextCtor({ throwOnConstruct: true });
     const graph = createExportAudioGraph([], FakeAudioContext);
     expect(graph).toBeNull();
+  });
+
+  it('returns null and closes the context when createMediaStreamDestination throws', () => {
+    const { FakeAudioContext, closeFn } = createFakeAudioContextCtor({ throwOnCreateDestination: true });
+    const graph = createExportAudioGraph([{ element: {} as HTMLVideoElement, audioEnabled: true }], FakeAudioContext);
+    expect(graph).toBeNull();
+    expect(closeFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null, disconnects earlier source nodes and closes the context when a source node throws', () => {
+    const { FakeAudioContext, createdSourceNodes, closeFn } = createFakeAudioContextCtor({
+      throwOnCreateSourceAtIndex: 1,
+    });
+    const graph = createExportAudioGraph(
+      [
+        { element: {} as HTMLVideoElement, audioEnabled: true },
+        { element: {} as HTMLVideoElement, audioEnabled: true },
+      ],
+      FakeAudioContext,
+    );
+
+    expect(graph).toBeNull();
+    expect(createdSourceNodes).toHaveLength(1);
+    expect(createdSourceNodes[0].disconnect).toHaveBeenCalledTimes(1);
+    expect(closeFn).toHaveBeenCalledTimes(1);
   });
 
   it('creates no source nodes when every entry has audioEnabled: false', () => {

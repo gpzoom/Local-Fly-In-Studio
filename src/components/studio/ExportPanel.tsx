@@ -58,6 +58,13 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
     abortControllerRef.current = abortController;
     setState({ phase: 'recording', elapsedMs: 0, totalMs: 0 });
 
+    // onProgress fires on every rAF tick (30-60/sec). The UI only ever renders whole seconds
+    // (formatMs rounds to seconds, and the progress bar moves imperceptibly between ticks), so
+    // re-rendering React that often just steals main-thread time from compositing and encoding.
+    // Update only when the displayed second actually changes — plus the very first tick, which
+    // is what fills in totalMs for the progress bar's max.
+    let lastReportedSecond = -1;
+
     try {
       const mediaAssetStore = await createMediaAssetStore();
       const blob = await runExport({
@@ -67,6 +74,9 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
         mediaAssetStore,
         onProgress: (elapsedMs, totalMs) => {
           if (!mountedRef.current) return;
+          const second = Math.floor(elapsedMs / 1000);
+          if (second === lastReportedSecond) return;
+          lastReportedSecond = second;
           setState({ phase: 'recording', elapsedMs, totalMs });
         },
         signal: abortController.signal,

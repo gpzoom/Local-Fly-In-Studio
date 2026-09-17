@@ -29,6 +29,9 @@ interface ResolvedMediaElement {
   objectUrl: string;
 }
 
+/** Sentinel sourceId the compiler emits for fade-to-black segments; never a real stored asset. */
+const BLACK_SENTINEL_SOURCE_ID = '__black__';
+
 function loadImageElement(objectUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -44,6 +47,13 @@ function loadVideoElement(objectUrl: string): Promise<HTMLVideoElement> {
     video.onloadedmetadata = () => resolve(video);
     video.onerror = () => reject(new Error('Failed to load a video asset for export.'));
     video.playsInline = true;
+    // Muted by default (matching PreviewStage's `muted={!layer.audioEnabled}`) for two reasons:
+    // an audio-disabled clip must not leak out of the user's real speakers during export, and an
+    // UNmuted play() is exactly what browser autoplay policy can reject — a muted one essentially
+    // cannot be. Entries whose segment has audioEnabled: true are un-muted again below only once
+    // their audio has been routed into the Web Audio graph (so it lands in the recording, not the
+    // speakers). See the videoEntryMap loop in runExport.
+    video.muted = true;
     video.src = objectUrl;
   });
 }
@@ -54,16 +64,28 @@ async function resolveMediaElements(
 ): Promise<{ elements: Map<string, HTMLImageElement | HTMLVideoElement>; resolved: ResolvedMediaElement[] }> {
   const elements = new Map<string, HTMLImageElement | HTMLVideoElement>();
   const resolved: ResolvedMediaElement[] = [];
+  const missingSourceIds: string[] = [];
 
   const uniqueByKind = new Map<string, 'image' | 'video'>();
   for (const segment of segments) {
     if (segment.sourceType === 'map') continue;
+    // The compiler emits fade-to-black segments with the '__black__' sentinel sourceId. It is
+    // never a real stored asset (frameCompositor paints those layers directly), so looking it up
+    // is a guaranteed-null round-trip that would also register as a "missing asset" below.
+    if (segment.sourceId === BLACK_SENTINEL_SOURCE_ID) continue;
     uniqueByKind.set(segment.sourceId, segment.sourceType);
   }
 
   for (const [sourceId, kind] of uniqueByKind) {
     const blob = await mediaAssetStore.get(sourceId);
-    if (!blob) continue;
+    if (!blob) {
+      // The spec makes the runner responsible for having every needed asset loaded before
+      // recording starts; frameCompositor's `if (!element) continue;` is only a defensive
+      // backstop. Silently skipping here would produce a full real-time export that ends in a
+      // video with a blank region and no warning at all, so collect and report instead.
+      missingSourceIds.push(sourceId);
+      continue;
+    }
     const objectUrl = URL.createObjectURL(blob);
     try {
       const element = kind === 'video' ? await loadVideoElement(objectUrl) : await loadImageElement(objectUrl);
@@ -80,6 +102,15 @@ async function resolveMediaElements(
       }
       throw error;
     }
+  }
+
+  if (missingSourceIds.length > 0) {
+    for (const { objectUrl } of resolved) {
+      URL.revokeObjectURL(objectUrl);
+    }
+    throw new Error(
+      `Could not load ${missingSourceIds.length} media asset(s) for export: ${missingSourceIds.join(', ')}`,
+    );
   }
 
   return { elements, resolved };
@@ -148,11 +179,31 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
   // elements resolved above until the Promise executor below is reached, so release them
   // here on any failure instead of leaking their object URLs and audio graph.
   let audioGraph: ExportAudioGraph | null = null;
+  let outputStream: MediaStream | null = null;
   let recorder: MediaRecorder;
+  const stopOutputStreamTracks = () => {
+    if (!outputStream) return;
+    for (const track of outputStream.getTracks()) {
+      track.stop();
+    }
+  };
   try {
     audioGraph = createExportAudioGraph(videoEntries, AudioContextCtor);
 
-    const outputStream = outputCanvas.captureStream(project.videoSettings.fps);
+    // Mirror PreviewStage's `muted={!layer.audioEnabled}`. An audio-enabled clip is only un-muted
+    // once createExportAudioGraph has actually taken ownership of its audio via
+    // createMediaElementSource — from that point its output is routed into the recording's
+    // destination node rather than the user's speakers. If the graph could not be built
+    // (createExportAudioGraph returned null) no audio can reach the file anyway, so every element
+    // stays muted: that keeps the export silent locally AND keeps play() muted, which browser
+    // autoplay policy essentially cannot reject.
+    if (audioGraph) {
+      for (const entry of videoEntries) {
+        entry.element.muted = !entry.audioEnabled;
+      }
+    }
+
+    outputStream = outputCanvas.captureStream(project.videoSettings.fps);
     if (audioGraph) {
       for (const track of audioGraph.destinationStream.getAudioTracks()) {
         outputStream.addTrack(track);
@@ -162,6 +213,7 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
     recorder = new MediaRecorder(outputStream, { mimeType: codec.mimeType });
   } catch (error) {
     audioGraph?.close();
+    stopOutputStreamTracks();
     releaseResolvedMedia();
     throw error;
   }
@@ -169,6 +221,9 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
   const cleanup = () => {
     releaseResolvedMedia();
     audioGraph?.close();
+    // The canvas capture stream's video track keeps the canvas hooked into the capture pipeline
+    // until it is explicitly stopped; audioGraph.close() only tears down the audio side.
+    stopOutputStreamTracks();
   };
 
   const chunks: Blob[] = [];
@@ -245,9 +300,20 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
         if (!(element instanceof HTMLVideoElement)) continue;
         if (!activeVideoSourceIds.has(layer.sourceId)) {
           const segment = segmentsById.get(layer.segmentId);
+          const sourceId = layer.sourceId;
           element.currentTime = layer.localTimeMs / 1000;
           element.playbackRate = segment?.playbackRate ?? 1;
-          void element.play();
+          // A discarded play() promise is dangerous here: if autoplay policy rejects the call the
+          // element silently never advances, compositeFrame keeps drawing its frozen first frame,
+          // and the export "succeeds" with a silently wrong result. Fail the whole export instead,
+          // naming the asset. AbortError is excluded because that is what our OWN pause() (below,
+          // or in cleanup) produces against a still-pending play() — not a real playback failure.
+          element.play().catch((error: unknown) => {
+            if (settled) return;
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            const detail = error instanceof Error ? error.message : String(error);
+            fail(new Error(`Could not play video asset "${sourceId}" during export: ${detail}`));
+          });
         }
       }
       for (const sourceId of activeVideoSourceIds) {
@@ -257,6 +323,12 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
       }
       activeVideoSourceIds = nextActiveVideoSourceIds;
 
+      // `tick` MUST stay a plain rAF callback that re-registers itself at the end of its own body
+      // (see the raf(tick) call below). That is what keeps it ordered AFTER Cesium's own render
+      // callback within each animation frame, which in turn is the only reason compositeFrame's
+      // `drawImage(viewer.scene.canvas, ...)` reads real map pixels instead of a cleared WebGL
+      // buffer — the viewer is built without `preserveDrawingBuffer`. See the long comment at that
+      // drawImage call in frameCompositor.ts before changing how this loop is scheduled.
       compositeFrame(ctx, frame, viewer.scene.canvas, mediaElements, outputCanvas.width, outputCanvas.height);
       onProgress(Math.min(elapsedMs, timeline.totalDurationMs), timeline.totalDurationMs);
 

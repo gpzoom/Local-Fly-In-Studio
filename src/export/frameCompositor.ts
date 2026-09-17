@@ -74,6 +74,25 @@ export function compositeFrame(
     if (layer.kind === 'map-hold' || layer.kind === 'map-travel') {
       ctx.save();
       ctx.globalAlpha = layer.opacity;
+      // LOAD-BEARING ORDERING ASSUMPTION. `cesiumCanvas` is a WebGL canvas created WITHOUT
+      // `contextOptions.webgl.preserveDrawingBuffer: true` (see createCesiumViewer in
+      // src/cesium/viewer.ts). Its drawing buffer is therefore only guaranteed to hold valid
+      // pixels until the browser composites the frame — read it at the wrong moment and this
+      // drawImage returns a cleared (black/transparent) buffer.
+      //
+      // It works today purely because of rAF ordering: Cesium registers its render callback when
+      // the viewer is constructed (long before an export starts) and re-registers it at the END of
+      // its own callback body, so within every animation frame Cesium renders FIRST and the export
+      // runner's `tick` (registered later, and likewise re-registered at the end of its own body)
+      // runs SECOND, while the just-rendered buffer is still intact.
+      //
+      // Verified end-to-end by pixel-sampling a real exported .mp4 (map frames at 2.5s/4s/6s/8s
+      // were 100% non-black, mean RGB ~[91,120,93], 300-550 distinct colors — real imagery, not a
+      // cleared buffer). Any change to that ordering — Cesium's `requestRenderMode`, a different
+      // rAF registration order, moving compositing to an OffscreenCanvas/worker, or rendering the
+      // scene on demand — will silently break this and produce a black map. Such a change MUST be
+      // paired with `contextOptions: { webgl: { preserveDrawingBuffer: true } }` on the Viewer (or
+      // an equivalent explicit "scene has rendered" guarantee before this read).
       ctx.drawImage(cesiumCanvas, 0, 0, cesiumCanvas.width, cesiumCanvas.height, 0, 0, outputWidth, outputHeight);
       ctx.restore();
       continue;
