@@ -8,7 +8,7 @@ import { compileProjectTimeline } from '../timeline/compiler';
 import { evaluateProjectTimeline } from '../timeline/evaluator';
 import { applyCameraState } from '../cesium/applyCameraState';
 import { compositeFrame } from './frameCompositor';
-import { createExportAudioGraph } from './audioGraph';
+import { createExportAudioGraph, type ExportAudioGraph } from './audioGraph';
 
 export interface ExportOptions {
   project: Project;
@@ -65,9 +65,21 @@ async function resolveMediaElements(
     const blob = await mediaAssetStore.get(sourceId);
     if (!blob) continue;
     const objectUrl = URL.createObjectURL(blob);
-    const element = kind === 'video' ? await loadVideoElement(objectUrl) : await loadImageElement(objectUrl);
-    elements.set(sourceId, element);
-    resolved.push({ element, objectUrl });
+    try {
+      const element = kind === 'video' ? await loadVideoElement(objectUrl) : await loadImageElement(objectUrl);
+      elements.set(sourceId, element);
+      resolved.push({ element, objectUrl });
+    } catch (error) {
+      // This asset's own object URL was never pushed to `resolved`, so revoke it directly;
+      // every earlier asset in this call succeeded and IS in `resolved`, so revoke those too
+      // before propagating — otherwise a partial failure here leaks every object URL created
+      // by this call so far.
+      URL.revokeObjectURL(objectUrl);
+      for (const { objectUrl: earlierObjectUrl } of resolved) {
+        URL.revokeObjectURL(earlierObjectUrl);
+      }
+      throw error;
+    }
   }
 
   return { elements, resolved };
@@ -103,37 +115,70 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
 
   const { elements: mediaElements, resolved } = await resolveMediaElements(timeline.segments, mediaAssetStore);
 
-  const videoEntries: { element: HTMLVideoElement; audioEnabled: boolean }[] = [];
-  for (const segment of timeline.segments) {
-    if (segment.sourceType !== 'video') continue;
-    const element = mediaElements.get(segment.sourceId);
-    if (!(element instanceof HTMLVideoElement)) continue;
-    videoEntries.push({ element, audioEnabled: segment.audioEnabled ?? false });
-  }
-  const audioGraph = createExportAudioGraph(videoEntries, AudioContextCtor);
-
-  const cleanup = () => {
+  const releaseResolvedMedia = () => {
     for (const { element } of resolved) {
       if (element instanceof HTMLVideoElement) element.pause();
     }
     for (const { objectUrl } of resolved) {
       URL.revokeObjectURL(objectUrl);
     }
+  };
+
+  // Dedupe by sourceId: a video asset reused across multiple segments (e.g. the same clip
+  // appearing twice in an interior tour) must only ever produce ONE audio-graph entry for its
+  // element — createExportAudioGraph calls audioContext.createMediaElementSource(element) per
+  // entry, and calling that twice on the same element throws InvalidStateError in real browsers.
+  const videoEntryMap = new Map<string, { element: HTMLVideoElement; audioEnabled: boolean }>();
+  for (const segment of timeline.segments) {
+    if (segment.sourceType !== 'video') continue;
+    const element = mediaElements.get(segment.sourceId);
+    if (!(element instanceof HTMLVideoElement)) continue;
+    const audioEnabled = segment.audioEnabled ?? false;
+    const existing = videoEntryMap.get(segment.sourceId);
+    if (existing) {
+      if (audioEnabled) existing.audioEnabled = true;
+    } else {
+      videoEntryMap.set(segment.sourceId, { element, audioEnabled });
+    }
+  }
+  const videoEntries = Array.from(videoEntryMap.values());
+
+  // Everything from here through MediaRecorder construction can throw (a duplicate audio
+  // source node, an unsupported constraint, etc.). Nothing else owns cleanup of the media
+  // elements resolved above until the Promise executor below is reached, so release them
+  // here on any failure instead of leaking their object URLs and audio graph.
+  let audioGraph: ExportAudioGraph | null = null;
+  let recorder: MediaRecorder;
+  try {
+    audioGraph = createExportAudioGraph(videoEntries, AudioContextCtor);
+
+    const outputStream = outputCanvas.captureStream(project.videoSettings.fps);
+    if (audioGraph) {
+      for (const track of audioGraph.destinationStream.getAudioTracks()) {
+        outputStream.addTrack(track);
+      }
+    }
+
+    recorder = new MediaRecorder(outputStream, { mimeType: codec.mimeType });
+  } catch (error) {
+    audioGraph?.close();
+    releaseResolvedMedia();
+    throw error;
+  }
+
+  const cleanup = () => {
+    releaseResolvedMedia();
     audioGraph?.close();
   };
 
-  const outputStream = outputCanvas.captureStream(project.videoSettings.fps);
-  if (audioGraph) {
-    for (const track of audioGraph.destinationStream.getAudioTracks()) {
-      outputStream.addTrack(track);
-    }
-  }
-
-  const recorder = new MediaRecorder(outputStream, { mimeType: codec.mimeType });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => {
     if (event.data.size > 0) chunks.push(event.data);
   };
+
+  // EvaluatedLayer does not carry playbackRate (only the compiled TimelineSegment does), so
+  // look segments up by id to apply each video's configured playback rate during export.
+  const segmentsById = new Map(timeline.segments.map((segment) => [segment.id, segment]));
 
   return new Promise<Blob>((resolve, reject) => {
     let activeVideoSourceIds = new Set<string>();
@@ -151,6 +196,7 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
     const fail = (error: Error) => {
       if (settled) return;
       settled = true;
+      if (frameHandle !== null) caf(frameHandle);
       cleanup();
       reject(error);
     };
@@ -167,6 +213,12 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
     };
 
     const tick = () => {
+      // recorder.onerror (or any other path) may have already settled the promise and run
+      // cleanup(); without this guard the rAF loop keeps running indefinitely afterward —
+      // re-triggering play() on videos cleanup() just paused, calling applyCameraState on the
+      // live shared viewer, and reporting progress after the export has already ended.
+      if (settled) return;
+
       if (signal.aborted) {
         abortedByUser = true;
         if (frameHandle !== null) caf(frameHandle);
@@ -192,7 +244,9 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
         const element = mediaElements.get(layer.sourceId);
         if (!(element instanceof HTMLVideoElement)) continue;
         if (!activeVideoSourceIds.has(layer.sourceId)) {
+          const segment = segmentsById.get(layer.segmentId);
           element.currentTime = layer.localTimeMs / 1000;
+          element.playbackRate = segment?.playbackRate ?? 1;
           void element.play();
         }
       }
