@@ -28,10 +28,14 @@ export class PlaybackController {
     this.timeline = timeline;
     this.raf =
       options.requestAnimationFrame ??
-      (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : () => -1);
+      (typeof globalThis.requestAnimationFrame !== 'undefined'
+        ? (callback: FrameRequestCallback) => globalThis.requestAnimationFrame(callback)
+        : () => -1);
     this.caf =
       options.cancelAnimationFrame ??
-      (typeof cancelAnimationFrame !== 'undefined' ? cancelAnimationFrame : () => {});
+      (typeof globalThis.cancelAnimationFrame !== 'undefined'
+        ? (handle: number) => globalThis.cancelAnimationFrame(handle)
+        : () => {});
     this.nowFn =
       options.now ?? (typeof performance !== 'undefined' ? () => performance.now() : () => Date.now());
   }
