@@ -1,0 +1,11 @@
+/* src/App.css */
+.preview-actions-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 8px;
+}
