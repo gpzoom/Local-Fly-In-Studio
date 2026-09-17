@@ -22,6 +22,7 @@ export function App() {
 
   function handleCreateNew() {
     setDraftProject(null);
+    useProjectStore.setState({ currentProject: null });
     setView('quick-create');
   }
 

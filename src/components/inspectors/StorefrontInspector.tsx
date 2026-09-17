@@ -29,8 +29,9 @@ export function StorefrontInspector({ project, sceneId, updateProject }: Storefr
         Duration (ms)
         <input
           type="number"
+          min="0"
           value={scene.durationMs}
-          onChange={(e) => updateScene({ durationMs: Number(e.target.value) })}
+          onChange={(e) => updateScene({ durationMs: Math.max(0, Number(e.target.value) || 0) })}
         />
       </label>
       <label>
@@ -72,9 +73,12 @@ export function StorefrontInspector({ project, sceneId, updateProject }: Storefr
         </select>
         <input
           type="number"
+          min="0"
           value={scene.transitionIn.durationMs}
           onChange={(e) =>
-            updateScene({ transitionIn: { ...scene.transitionIn, durationMs: Number(e.target.value) } })
+            updateScene({
+              transitionIn: { ...scene.transitionIn, durationMs: Math.max(0, Number(e.target.value) || 0) },
+            })
           }
         />
       </fieldset>
@@ -95,9 +99,12 @@ export function StorefrontInspector({ project, sceneId, updateProject }: Storefr
         </select>
         <input
           type="number"
+          min="0"
           value={scene.transitionOut.durationMs}
           onChange={(e) =>
-            updateScene({ transitionOut: { ...scene.transitionOut, durationMs: Number(e.target.value) } })
+            updateScene({
+              transitionOut: { ...scene.transitionOut, durationMs: Math.max(0, Number(e.target.value) || 0) },
+            })
           }
         />
       </fieldset>

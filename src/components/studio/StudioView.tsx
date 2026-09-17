@@ -30,6 +30,7 @@ export function StudioView({ onBack }: StudioViewProps) {
   const viewerRef = useRef<Viewer | null>(null);
   const controllerRef = useRef<PlaybackController | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!currentProject) return null;
   // Bind a non-null local so nested function declarations below (which are hoisted,
@@ -43,8 +44,17 @@ export function StudioView({ onBack }: StudioViewProps) {
   }
 
   async function handleSave() {
-    await saveProjectAction();
-    setIsDirty(false);
+    setError(null);
+    // Stamp the save time so ProjectList's "updated …" column reflects reality.
+    updateProject((current) => ({ ...current, updatedAt: new Date().toISOString() }));
+    try {
+      await saveProjectAction();
+      setIsDirty(false);
+    } catch (err) {
+      // A failed save must never be silent: isDirty stays true and the Back button warns
+      // about unsaved changes, but the user needs to know the write itself did not land.
+      setError(err instanceof Error ? err.message : 'Could not save the project.');
+    }
   }
 
   function handleBack() {
@@ -129,6 +139,8 @@ export function StudioView({ onBack }: StudioViewProps) {
           Save
         </button>
       </div>
+
+      {error && <p role="alert">{error}</p>}
 
       <TimelineStrip project={project} onSeek={handleSeek} updateProject={updateProject} />
 

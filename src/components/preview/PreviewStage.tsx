@@ -53,6 +53,12 @@ export function PreviewStage({ project, onOverlayClick, onViewerReady, onControl
   const videoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
   /** sourceId -> blob: URL. Mutable source of truth; `overlayUrls` mirrors it for rendering. */
   const urlCacheRef = useRef<Map<string, string>>(new Map());
+  /**
+   * Last playhead position, preserved across controller recreation. Every edit produces a
+   * new `project` (and so a new `timeline`), which rebuilds the controller; without this the
+   * preview would snap back to 0 on every keystroke in the inspectors.
+   */
+  const lastTimeMsRef = useRef(0);
 
   // Latest-callback refs so the mount-only viewer effect and the timeline-keyed
   // controller effect don't need onViewerReady/onControllerReady in their dependency
@@ -82,9 +88,12 @@ export function PreviewStage({ project, onOverlayClick, onViewerReady, onControl
     const unsubscribe = controller.subscribe((nextFrame, timeMs) => {
       setFrame(nextFrame);
       setCurrentTimeMs(timeMs);
+      lastTimeMsRef.current = timeMs;
       setIsPlaying(controller.isPlaying);
     });
-    controller.seek(0);
+    // `seek` clamps to [0, totalDurationMs], so this is safe even when an edit made the
+    // new timeline shorter than the old playhead position.
+    controller.seek(lastTimeMsRef.current);
     onControllerReadyRef.current?.(controller);
     return () => {
       unsubscribe();

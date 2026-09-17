@@ -37,16 +37,18 @@ export function InteriorVideoInspector({ project, sceneId, itemId, updateProject
         Trim start (ms)
         <input
           type="number"
+          min="0"
           value={item.trimStartMs}
-          onChange={(e) => updateItem({ trimStartMs: Number(e.target.value) })}
+          onChange={(e) => updateItem({ trimStartMs: Math.max(0, Number(e.target.value) || 0) })}
         />
       </label>
       <label>
         Trim end (ms)
         <input
           type="number"
+          min="0"
           value={item.trimEndMs}
-          onChange={(e) => updateItem({ trimEndMs: Number(e.target.value) })}
+          onChange={(e) => updateItem({ trimEndMs: Math.max(0, Number(e.target.value) || 0) })}
         />
       </label>
       <label>
@@ -56,7 +58,7 @@ export function InteriorVideoInspector({ project, sceneId, itemId, updateProject
           step="0.1"
           min="0.1"
           value={item.playbackRate}
-          onChange={(e) => updateItem({ playbackRate: Number(e.target.value) })}
+          onChange={(e) => updateItem({ playbackRate: Math.max(0.1, Number(e.target.value) || 0.1) })}
         />
       </label>
       <label>
@@ -94,9 +96,12 @@ export function InteriorVideoInspector({ project, sceneId, itemId, updateProject
         </select>
         <input
           type="number"
+          min="0"
           value={item.transitionToNext.durationMs}
           onChange={(e) =>
-            updateItem({ transitionToNext: { ...item.transitionToNext, durationMs: Number(e.target.value) } })
+            updateItem({
+              transitionToNext: { ...item.transitionToNext, durationMs: Math.max(0, Number(e.target.value) || 0) },
+            })
           }
         />
       </fieldset>

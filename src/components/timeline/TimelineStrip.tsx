@@ -46,7 +46,12 @@ export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripP
         {storefrontScene && (
           <button
             type="button"
-            onClick={() => select({ type: 'storefront', sceneId: storefrontScene.id })}
+            onClick={() => {
+              select({ type: 'storefront', sceneId: storefrontScene.id });
+              // Move the playhead into the storefront section too, so the storefront image
+              // is actually on screen and clickable for setting the door target.
+              if (storefrontSection) onSeek(storefrontSection.startMs);
+            }}
           >
             Storefront ({storefrontSection ? seconds(storefrontSection.endMs - storefrontSection.startMs) : 0}s)
           </button>

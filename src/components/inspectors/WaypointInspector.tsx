@@ -59,8 +59,9 @@ export function WaypointInspector({ project, sceneId, waypointId, updateProject,
         Travel duration (ms)
         <input
           type="number"
+          min="0"
           value={waypoint.travelDurationMs}
-          onChange={(e) => updateWaypoint({ travelDurationMs: Number(e.target.value) })}
+          onChange={(e) => updateWaypoint({ travelDurationMs: Math.max(0, Number(e.target.value) || 0) })}
         />
       </label>
       <label>
@@ -76,8 +77,9 @@ export function WaypointInspector({ project, sceneId, waypointId, updateProject,
         Hold duration (ms)
         <input
           type="number"
+          min="0"
           value={waypoint.holdDurationMs}
-          onChange={(e) => updateWaypoint({ holdDurationMs: Number(e.target.value) })}
+          onChange={(e) => updateWaypoint({ holdDurationMs: Math.max(0, Number(e.target.value) || 0) })}
         />
       </label>
       <label>

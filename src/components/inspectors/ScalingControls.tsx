@@ -22,6 +22,12 @@ export function ScalingControls({ project, updateProject }: ScalingControlsProps
 
   function applyFit(kind: 'map' | 'interior' | 'project') {
     setError(null);
+    // fitMapToDuration/fitInteriorTourToDuration only throw when lockedSum > targetMs, so a
+    // zero (or empty) target would otherwise silently zero every unlocked duration.
+    if (targetMs() <= 0) {
+      setError('Target duration must be greater than 0 seconds.');
+      return;
+    }
     try {
       updateProject((current) => {
         if (kind === 'map') {

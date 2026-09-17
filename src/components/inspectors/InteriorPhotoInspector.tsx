@@ -37,8 +37,9 @@ export function InteriorPhotoInspector({ project, sceneId, itemId, updateProject
         Duration (ms)
         <input
           type="number"
+          min="0"
           value={item.durationMs}
-          onChange={(e) => updateItem({ durationMs: Number(e.target.value) })}
+          onChange={(e) => updateItem({ durationMs: Math.max(0, Number(e.target.value) || 0) })}
         />
       </label>
       <label>
@@ -80,9 +81,12 @@ export function InteriorPhotoInspector({ project, sceneId, itemId, updateProject
         </select>
         <input
           type="number"
+          min="0"
           value={item.transitionToNext.durationMs}
           onChange={(e) =>
-            updateItem({ transitionToNext: { ...item.transitionToNext, durationMs: Number(e.target.value) } })
+            updateItem({
+              transitionToNext: { ...item.transitionToNext, durationMs: Math.max(0, Number(e.target.value) || 0) },
+            })
           }
         />
       </fieldset>
