@@ -13,6 +13,7 @@ import { StorefrontInspector } from '../inspectors/StorefrontInspector';
 import { InteriorPhotoInspector } from '../inspectors/InteriorPhotoInspector';
 import { InteriorVideoInspector } from '../inspectors/InteriorVideoInspector';
 import { ScalingControls } from '../inspectors/ScalingControls';
+import { ExportPanel } from './ExportPanel';
 import type { Project } from '../../models/project';
 import type { EvaluatedLayer } from '../../models/timeline';
 import type { InteriorTourScene, StorefrontScene } from '../../models/scenes';
@@ -31,6 +32,8 @@ export function StudioView({ onBack }: StudioViewProps) {
   const controllerRef = useRef<PlaybackController | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   if (!currentProject) return null;
   // Bind a non-null local so nested function declarations below (which are hoisted,
@@ -135,9 +138,14 @@ export function StudioView({ onBack }: StudioViewProps) {
           Back
         </button>
         <h2>{project.projectName}</h2>
-        <button type="button" disabled={!isDirty} onClick={() => void handleSave()}>
-          Save
-        </button>
+        <div className="studio-header-actions">
+          <button type="button" disabled={!viewerReady} onClick={() => setExportOpen(true)}>
+            Export
+          </button>
+          <button type="button" disabled={!isDirty} onClick={() => void handleSave()}>
+            Save
+          </button>
+        </div>
       </div>
 
       {error && <p role="alert">{error}</p>}
@@ -149,6 +157,7 @@ export function StudioView({ onBack }: StudioViewProps) {
         onOverlayClick={handleOverlayClick}
         onViewerReady={(viewer) => {
           viewerRef.current = viewer;
+          setViewerReady(true);
         }}
         onControllerReady={(controller) => {
           controllerRef.current = controller;
@@ -158,6 +167,10 @@ export function StudioView({ onBack }: StudioViewProps) {
       <div className="studio-inspector">{renderInspector()}</div>
 
       <ScalingControls project={project} updateProject={updateProject} />
+
+      {exportOpen && viewerRef.current && (
+        <ExportPanel project={project} viewer={viewerRef.current} onClose={() => setExportOpen(false)} />
+      )}
     </div>
   );
 }
