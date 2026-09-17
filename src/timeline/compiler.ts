@@ -1,4 +1,4 @@
-import type { Project } from '../models/project';
+import type { Project, Destination } from '../models/project';
 import type {
   MapScene,
   StorefrontScene,
@@ -8,6 +8,7 @@ import type {
   Transition,
 } from '../models/scenes';
 import type { TimelineSegment, CompiledTimeline, CompiledTimelineSection, SegmentKind } from '../models/timeline';
+import { resolveRelativeCameraState } from './resolveRelativeCamera';
 
 interface PendingUnit {
   sectionId: string;
@@ -33,11 +34,29 @@ function videoEffectiveDurationMs(item: Extract<InteriorTourItem, { type: 'video
   return (item.trimEndMs - item.trimStartMs) / item.playbackRate;
 }
 
-function buildMapUnits(scene: MapScene): PendingUnit[] {
+function resolveWaypointCamera(waypoint: Waypoint, destination: Destination): Waypoint {
+  if (waypoint.type === 'absolute') return waypoint;
+  const camera = resolveRelativeCameraState(waypoint.relativeCamera, destination);
+  if (!camera) return waypoint;
+  return {
+    id: waypoint.id,
+    name: waypoint.name,
+    type: 'absolute',
+    camera,
+    travelDurationMs: waypoint.travelDurationMs,
+    holdDurationMs: waypoint.holdDurationMs,
+    travelDurationLocked: waypoint.travelDurationLocked,
+    holdDurationLocked: waypoint.holdDurationLocked,
+    easing: waypoint.easing,
+  };
+}
+
+function buildMapUnits(scene: MapScene, destination: Destination): PendingUnit[] {
+  const resolvedWaypoints = scene.waypoints.map((wp) => resolveWaypointCamera(wp, destination));
   const units: PendingUnit[] = [];
-  scene.waypoints.forEach((waypoint, index) => {
+  resolvedWaypoints.forEach((waypoint, index) => {
     if (index > 0) {
-      const prev = scene.waypoints[index - 1];
+      const prev = resolvedWaypoints[index - 1];
       units.push({
         sectionId: scene.id,
         kind: 'map-travel',
@@ -114,7 +133,7 @@ export function compileProjectTimeline(project: Project): CompiledTimeline {
   const interiorScene = project.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour');
 
   const units: PendingUnit[] = [];
-  if (mapScene) units.push(...buildMapUnits(mapScene));
+  if (mapScene) units.push(...buildMapUnits(mapScene, project.destination));
   if (storefrontScene) units.push(...buildStorefrontUnits(storefrontScene));
   if (interiorScene) units.push(...buildInteriorTourUnits(interiorScene, storefrontScene?.transitionOut));
 

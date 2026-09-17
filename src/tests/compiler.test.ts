@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { compileProjectTimeline } from '../timeline/compiler';
+import { evaluateProjectTimeline } from '../timeline/evaluator';
 import { makeMinimalProject } from './fixtures';
 import type { MapScene, InteriorTourScene, StorefrontScene, Waypoint } from '../models/scenes';
 
@@ -191,5 +192,63 @@ describe('compileProjectTimeline', () => {
     const timeline = compileProjectTimeline(project);
     const starts = timeline.segments.map((s) => s.startMs);
     expect(starts).toEqual([...starts].sort((a, b) => a - b));
+  });
+});
+
+describe('compileProjectTimeline — destination-relative waypoints', () => {
+  it('resolves a destination-relative waypoint to a real camera when the destination has coordinates', () => {
+    const project = makeMinimalProject();
+    const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
+    project.destination = { source: 'manual', latitude: 10, longitude: 20 };
+    mapScene.waypoints = [
+      makeWaypoint({ id: 'earth', holdDurationMs: 1000 }),
+      {
+        id: 'business',
+        name: 'Business',
+        type: 'destination-relative',
+        relativeCamera: { headingDeg: 0, pitchDeg: -25, distanceMeters: 0, heightMeters: 220 },
+        travelDurationMs: 1800,
+        holdDurationMs: 600,
+        travelDurationLocked: false,
+        holdDurationLocked: false,
+        easing: 'cinematic',
+      },
+    ];
+
+    const timeline = compileProjectTimeline(project);
+    const holdSegment = timeline.segments.find(
+      (s) => s.sectionId === mapScene.id && s.kind === 'map-hold' && s.startMs > 1000,
+    )!;
+    expect(holdSegment.fromWaypoint?.type).toBe('absolute');
+    // Segments don't carry `camera` directly — the TimelineSegment type has no such field, only
+    // the evaluator's EvaluatedLayer does (checked below).
+
+    const frame = evaluateProjectTimeline(timeline, holdSegment.startMs);
+    const mapLayer = frame.layers.find((l) => l.sourceType === 'map')!;
+    expect(mapLayer.camera).toEqual({ latitude: 10, longitude: 20, height: 220, heading: 0, pitch: -25, roll: 0 });
+  });
+
+  it('leaves a destination-relative waypoint unresolved (no camera) when the destination has no coordinates', () => {
+    const project = makeMinimalProject();
+    const mapScene = project.scenes.find((s): s is MapScene => s.type === 'map')!;
+    project.destination = { source: 'address', latitude: null, longitude: null };
+    mapScene.waypoints = [
+      {
+        id: 'business',
+        name: 'Business',
+        type: 'destination-relative',
+        relativeCamera: { headingDeg: 0, pitchDeg: -25, distanceMeters: 400, heightMeters: 220 },
+        travelDurationMs: 0,
+        holdDurationMs: 600,
+        travelDurationLocked: false,
+        holdDurationLocked: false,
+        easing: 'cinematic',
+      },
+    ];
+
+    const timeline = compileProjectTimeline(project);
+    const frame = evaluateProjectTimeline(timeline, 0);
+    const mapLayer = frame.layers.find((l) => l.sourceType === 'map')!;
+    expect(mapLayer.camera).toBeUndefined();
   });
 });
