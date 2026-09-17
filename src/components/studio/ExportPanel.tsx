@@ -30,6 +30,7 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
   const [state, setState] = useState<ExportPanelState>(() => ({
     phase: 'idle',
     capabilities: checkExportCapabilities(viewer.scene.canvas),
@@ -37,6 +38,7 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
 
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       abortControllerRef.current?.abort();
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     };
@@ -55,14 +57,25 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
         viewer,
         outputCanvas: canvasRef.current,
         mediaAssetStore,
-        onProgress: (elapsedMs, totalMs) => setState({ phase: 'recording', elapsedMs, totalMs }),
+        onProgress: (elapsedMs, totalMs) => {
+          if (!mountedRef.current) return;
+          setState({ phase: 'recording', elapsedMs, totalMs });
+        },
         signal: abortController.signal,
       });
       const url = URL.createObjectURL(blob);
+      if (!mountedRef.current) {
+        // The component unmounted while the export was finishing (its own cleanup effect
+        // already ran and revoked whatever was in objectUrlRef at that time, so it will
+        // never see this URL), so nothing else will ever revoke it unless we do it here.
+        URL.revokeObjectURL(url);
+        return;
+      }
       objectUrlRef.current = url;
       const extension = blob.type.includes('mp4') ? 'mp4' : 'webm';
       setState({ phase: 'done', url, filename: `${project.projectName}.${extension}` });
     } catch (err) {
+      if (!mountedRef.current) return;
       setState({ phase: 'error', message: err instanceof Error ? err.message : 'Export failed.' });
     }
   }
