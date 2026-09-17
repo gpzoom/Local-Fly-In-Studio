@@ -11,6 +11,7 @@ interface ProjectStoreState {
   createProject: (project: Project) => Promise<void>;
   loadProject: (id: string) => Promise<void>;
   saveProject: () => Promise<void>;
+  updateProject: (updater: (project: Project) => Project) => void;
 }
 
 export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
@@ -34,5 +35,11 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
     const { currentProject } = get();
     if (!currentProject) return;
     await persistProject(currentProject);
+  },
+
+  updateProject(updater: (project: Project) => Project) {
+    const { currentProject } = get();
+    if (!currentProject) return;
+    set({ currentProject: updater(currentProject) });
   },
 }));

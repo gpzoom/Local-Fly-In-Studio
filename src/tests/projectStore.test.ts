@@ -62,4 +62,23 @@ describe('projectStore', () => {
     await useProjectStore.getState().loadProject('store-proj-3');
     expect(useProjectStore.getState().currentProject?.projectName).toBe('Renamed');
   });
+
+  it('updateProject mutates the current project in memory without persisting it', async () => {
+    const project = makeMinimalProject({ id: 'store-proj-4' });
+    await useProjectStore.getState().createProject(project);
+
+    useProjectStore.getState().updateProject((p) => ({ ...p, projectName: 'Edited In Memory' }));
+
+    expect(useProjectStore.getState().currentProject?.projectName).toBe('Edited In Memory');
+
+    useProjectStore.setState({ currentProject: null });
+    await useProjectStore.getState().loadProject('store-proj-4');
+    expect(useProjectStore.getState().currentProject?.projectName).toBe('Test Project');
+  });
+
+  it('updateProject is a no-op when there is no current project', () => {
+    useProjectStore.setState({ currentProject: null });
+    expect(() => useProjectStore.getState().updateProject((p) => p)).not.toThrow();
+    expect(useProjectStore.getState().currentProject).toBeNull();
+  });
 });
