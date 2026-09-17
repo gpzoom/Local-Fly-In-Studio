@@ -4,6 +4,7 @@ import { compileProjectTimeline } from '../../timeline/compiler';
 import { PlaybackController } from '../../timeline/playbackController';
 import { createCesiumViewer, type CesiumViewerHandle } from '../../cesium/viewer';
 import { applyCameraState } from '../../cesium/applyCameraState';
+import type { Viewer } from 'cesium';
 import { createMediaAssetStore } from '../../media/createMediaAssetStore';
 import type { MediaAssetStore } from '../../media/MediaAssetStore';
 import { PlaybackControls } from './PlaybackControls';
@@ -13,6 +14,9 @@ import type { VisualTransform } from '../../models/scenes';
 
 interface PreviewStageProps {
   project: Project;
+  onOverlayClick?: (normalized: { x: number; y: number }, layer: EvaluatedLayer) => void;
+  onViewerReady?: (viewer: Viewer) => void;
+  onControllerReady?: (controller: PlaybackController) => void;
 }
 
 /** Separator used to build a stable dependency key from a list of sourceIds. */
@@ -39,7 +43,7 @@ function overlayLayers(layers: EvaluatedLayer[]): EvaluatedLayer[] {
   return layers.filter((layer) => !isMapLayer(layer));
 }
 
-export function PreviewStage({ project }: PreviewStageProps) {
+export function PreviewStage({ project, onOverlayClick, onViewerReady, onControllerReady }: PreviewStageProps) {
   const timeline = useMemo(() => compileProjectTimeline(project), [project]);
   const cesiumContainerRef = useRef<HTMLDivElement | null>(null);
   const viewerHandleRef = useRef<CesiumViewerHandle | null>(null);
@@ -50,6 +54,15 @@ export function PreviewStage({ project }: PreviewStageProps) {
   /** sourceId -> blob: URL. Mutable source of truth; `overlayUrls` mirrors it for rendering. */
   const urlCacheRef = useRef<Map<string, string>>(new Map());
 
+  // Latest-callback refs so the mount-only viewer effect and the timeline-keyed
+  // controller effect don't need onViewerReady/onControllerReady in their dependency
+  // arrays — an unstable inline function from the caller must never recreate the
+  // Cesium viewer or the PlaybackController.
+  const onViewerReadyRef = useRef(onViewerReady);
+  onViewerReadyRef.current = onViewerReady;
+  const onControllerReadyRef = useRef(onControllerReady);
+  onControllerReadyRef.current = onControllerReady;
+
   const [frame, setFrame] = useState<EvaluatedFrame | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
@@ -59,6 +72,7 @@ export function PreviewStage({ project }: PreviewStageProps) {
     if (!cesiumContainerRef.current) return;
     const handle = createCesiumViewer(cesiumContainerRef.current);
     viewerHandleRef.current = handle;
+    onViewerReadyRef.current?.(handle.viewer);
     return () => handle.destroy();
   }, []);
 
@@ -71,6 +85,7 @@ export function PreviewStage({ project }: PreviewStageProps) {
       setIsPlaying(controller.isPlaying);
     });
     controller.seek(0);
+    onControllerReadyRef.current?.(controller);
     return () => {
       unsubscribe();
       controller.destroy();
@@ -218,6 +233,16 @@ export function PreviewStage({ project }: PreviewStageProps) {
             src={url}
             alt=""
             style={{ opacity: layer.opacity, transform: transformToCss(layer.transform) }}
+            onClick={
+              onOverlayClick
+                ? (event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    const x = (event.clientX - rect.left) / rect.width;
+                    const y = (event.clientY - rect.top) / rect.height;
+                    onOverlayClick({ x, y }, layer);
+                  }
+                : undefined
+            }
           />
         );
       })}
