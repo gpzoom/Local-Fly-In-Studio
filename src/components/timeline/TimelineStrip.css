@@ -1,0 +1,33 @@
+.timeline-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timeline-sections {
+  display: flex;
+  gap: 4px;
+}
+
+.timeline-sections button {
+  flex: 1;
+}
+
+.waypoint-blocks,
+.interior-item-blocks {
+  display: flex;
+  gap: 2px;
+  min-height: 32px;
+}
+
+.timeline-block {
+  min-width: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.timeline-block--selected {
+  outline: 2px solid #2684ff;
+}
