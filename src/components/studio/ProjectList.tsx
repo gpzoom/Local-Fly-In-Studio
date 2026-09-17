@@ -12,15 +12,22 @@ interface ProjectListProps {
 export function ProjectList({ onOpen, onCreateNew }: ProjectListProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const loadProject = useProjectStore((state) => state.loadProject);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const all = await listProjects();
-      if (cancelled) return;
-      setProjects(all);
-      setLoading(false);
+      try {
+        const all = await listProjects();
+        if (cancelled) return;
+        setProjects(all);
+        setLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to load projects.');
+        setLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
@@ -28,8 +35,12 @@ export function ProjectList({ onOpen, onCreateNew }: ProjectListProps) {
   }, []);
 
   async function handleOpen(id: string) {
-    await loadProject(id);
-    onOpen();
+    try {
+      await loadProject(id);
+      onOpen();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open project.');
+    }
   }
 
   return (
@@ -37,6 +48,7 @@ export function ProjectList({ onOpen, onCreateNew }: ProjectListProps) {
       <button type="button" onClick={onCreateNew}>
         Create New
       </button>
+      {error && <p role="alert">{error}</p>}
       {loading ? (
         <p>Loading…</p>
       ) : projects.length === 0 ? (
