@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import './PreviewStage.css';
 import { compileProjectTimeline } from '../../timeline/compiler';
 import { PlaybackController } from '../../timeline/playbackController';
 import { createCesiumViewer, type CesiumViewerHandle } from '../../cesium/viewer';

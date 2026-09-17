@@ -1,0 +1,51 @@
+.preview-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #000;
+}
+
+.preview-cesium-container {
+  position: absolute;
+  inset: 0;
+}
+
+.preview-black-overlay {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+.preview-overlay-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-overlay-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.playback-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.playback-controls input[type='range'] {
+  flex: 1;
+}
