@@ -1,19 +1,25 @@
-import { useState } from 'react';
 import { ImagePlus } from 'lucide-react';
 
 interface InteriorTourStepProps {
-  onCreateDraft: (files: File[]) => void;
+  /** Controlled selection — owned by QuickCreateWizard so it survives remounts. */
+  files: File[];
+  onFilesChange: (files: File[]) => void;
+  onCreateDraft: () => void;
   onBack: () => void;
   submitting: boolean;
 }
 
-export function InteriorTourStep({ onCreateDraft, onBack, submitting }: InteriorTourStepProps) {
-  const [files, setFiles] = useState<File[]>([]);
-
+export function InteriorTourStep({
+  files,
+  onFilesChange,
+  onCreateDraft,
+  onBack,
+  submitting,
+}: InteriorTourStepProps) {
   function handleFilesChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files;
     if (!selected) return;
-    setFiles(Array.from(selected));
+    onFilesChange(Array.from(selected));
   }
 
   return (
@@ -26,8 +32,9 @@ export function InteriorTourStep({ onCreateDraft, onBack, submitting }: Interior
       </label>
       {files.length > 0 && (
         <ul className="quick-create-file-list">
-          {files.map((file) => (
-            <li key={file.name}>{file.name}</li>
+          {files.map((file, index) => (
+            // Filenames alone collide (camera defaults like IMG_0001.jpg from two sources).
+            <li key={`${file.name}-${file.size}-${index}`}>{file.name}</li>
           ))}
         </ul>
       )}
@@ -35,7 +42,7 @@ export function InteriorTourStep({ onCreateDraft, onBack, submitting }: Interior
         <button type="button" onClick={onBack} disabled={submitting}>
           Back
         </button>
-        <button type="button" onClick={() => onCreateDraft(files)} disabled={submitting}>
+        <button type="button" onClick={onCreateDraft} disabled={submitting}>
           {submitting ? 'Creating…' : 'Create Draft'}
         </button>
       </div>

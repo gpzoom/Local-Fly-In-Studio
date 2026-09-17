@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import './QuickCreateWizard.css';
 import { StorefrontStep } from './StorefrontStep';
 import { InteriorTourStep } from './InteriorTourStep';
 import { NoDestinationFallback } from './NoDestinationFallback';
@@ -15,14 +16,17 @@ interface QuickCreateWizardProps {
 export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
   const [step, setStep] = useState<WizardStep>('storefront');
   const [storefrontPhoto, setStorefrontPhoto] = useState<File | null>(null);
-  const [pendingInteriorMedia, setPendingInteriorMedia] = useState<File[]>([]);
+  // Source of truth for the interior selection. Living here (rather than inside
+  // InteriorTourStep) means the user's files survive any step transition that
+  // unmounts the step — including a no-destination retry that fails for a second,
+  // unrelated reason and lands back on 'interior'.
+  const [interiorMedia, setInteriorMedia] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const createProject = useProjectStore((state) => state.createProject);
 
   const runCreateDraft = useCallback(
-    async (interiorMedia: File[], destinationOverride?: Destination) => {
+    async (destinationOverride?: Destination) => {
       if (!storefrontPhoto) return;
-      setPendingInteriorMedia(interiorMedia);
       setStep('creating');
       setError(null);
       try {
@@ -38,7 +42,7 @@ export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
         setStep('interior');
       }
     },
-    [storefrontPhoto, createProject, onDraftReady],
+    [storefrontPhoto, interiorMedia, createProject, onDraftReady],
   );
 
   if (step === 'storefront') {
@@ -56,7 +60,7 @@ export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
     return (
       <NoDestinationFallback
         onResolved={(destination) => {
-          void runCreateDraft(pendingInteriorMedia, destination);
+          void runCreateDraft(destination);
         }}
       />
     );
@@ -65,7 +69,9 @@ export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
   return (
     <div>
       <InteriorTourStep
-        onCreateDraft={(files) => void runCreateDraft(files)}
+        files={interiorMedia}
+        onFilesChange={setInteriorMedia}
+        onCreateDraft={() => void runCreateDraft()}
         onBack={() => setStep('storefront')}
         submitting={step === 'creating'}
       />
