@@ -37,6 +37,14 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
   }));
 
   useEffect(() => {
+    // Under React StrictMode's dev-only double-invoke, this effect's cleanup runs once
+    // immediately after the first mount (simulating an unmount) before the effect body runs
+    // again for the "real" mount. Without resetting mountedRef.current here, that first
+    // cleanup call leaves it permanently false, so every mountedRef.current-gated update below
+    // (onProgress, the post-export state transition, the error handler) would silently no-op
+    // forever — the panel would look stuck in "recording" indefinitely even though the export
+    // itself completes normally in the background.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       abortControllerRef.current?.abort();
