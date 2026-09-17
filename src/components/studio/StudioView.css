@@ -1,0 +1,57 @@
+/* src/components/studio/StudioView.css */
+.studio-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 960px;
+}
+
+.studio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.studio-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.studio-inspector {
+  min-height: 40px;
+}
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 480px;
+}
+
+.inspector label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.inspector fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.waypoint-inspector-actions,
+.scaling-controls-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.captured-camera-readout {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 8px;
+  font-size: 12px;
+  font-family: monospace;
+}
