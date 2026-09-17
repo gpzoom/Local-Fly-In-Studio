@@ -15,12 +15,14 @@ interface QuickCreateWizardProps {
 export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
   const [step, setStep] = useState<WizardStep>('storefront');
   const [storefrontPhoto, setStorefrontPhoto] = useState<File | null>(null);
+  const [pendingInteriorMedia, setPendingInteriorMedia] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const createProject = useProjectStore((state) => state.createProject);
 
   const runCreateDraft = useCallback(
     async (interiorMedia: File[], destinationOverride?: Destination) => {
       if (!storefrontPhoto) return;
+      setPendingInteriorMedia(interiorMedia);
       setStep('creating');
       setError(null);
       try {
@@ -54,7 +56,7 @@ export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
     return (
       <NoDestinationFallback
         onResolved={(destination) => {
-          void runCreateDraft([], destination);
+          void runCreateDraft(pendingInteriorMedia, destination);
         }}
       />
     );
