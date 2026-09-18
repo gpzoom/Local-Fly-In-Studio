@@ -50,5 +50,25 @@ export function createIndexedDbMediaStore(): MediaAssetStore {
       const raw = await db.get('mediaAssets', id);
       return raw !== undefined;
     },
+
+    async replace(id: string, file: File): Promise<StoredMediaAsset> {
+      const db = await getDb();
+      const record: StoredMediaRecord = {
+        id,
+        blob: file,
+        filename: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+      };
+      await db.put('mediaAssets', record);
+      return {
+        id,
+        storageLocation: 'indexeddb',
+        storageKey: id,
+        sizeBytes: file.size,
+        mimeType: file.type,
+        filename: file.name,
+      };
+    },
   };
 }

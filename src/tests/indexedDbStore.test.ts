@@ -52,4 +52,24 @@ describe('indexedDbStore', () => {
     expect(await store.exists(stored.id)).toBe(false);
     expect(await store.get(stored.id)).toBeNull();
   });
+
+  it('replace overwrites the blob at an existing id, keeping the same id', async () => {
+    const store = createIndexedDbMediaStore();
+    const original = new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' });
+    const stored = await store.save(original);
+
+    const replacement = new File([new Uint8Array([9, 9])], 'b.png', { type: 'image/png' });
+    const result = await store.replace(stored.id, replacement);
+
+    expect(result.id).toBe(stored.id);
+    expect(result.filename).toBe('b.png');
+    expect(result.mimeType).toBe('image/png');
+    expect(result.sizeBytes).toBe(2);
+
+    const retrieved = await store.get(stored.id);
+    expect(retrieved).not.toBeNull();
+    const bytes = new Uint8Array(await retrieved!.arrayBuffer());
+    expect(Array.from(bytes)).toEqual([9, 9]);
+    expect(await store.exists(stored.id)).toBe(true);
+  });
 });

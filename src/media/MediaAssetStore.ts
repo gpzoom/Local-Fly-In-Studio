@@ -12,4 +12,5 @@ export interface MediaAssetStore {
   get(id: string): Promise<Blob | File | null>;
   delete(id: string): Promise<void>;
   exists(id: string): Promise<boolean>;
+  replace(id: string, file: File): Promise<StoredMediaAsset>;
 }

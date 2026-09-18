@@ -52,5 +52,20 @@ export async function createOpfsMediaStore(
         return false;
       }
     },
+
+    async replace(id: string, file: File): Promise<StoredMediaAsset> {
+      const fileHandle = await dir.getFileHandle(id, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(file);
+      await writable.close();
+      return {
+        id,
+        storageLocation: 'opfs',
+        storageKey: id,
+        sizeBytes: file.size,
+        mimeType: file.type,
+        filename: file.name,
+      };
+    },
   };
 }
