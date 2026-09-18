@@ -23,6 +23,9 @@ function makeFakeMediaStore(): MediaAssetStore {
     get: vi.fn(async () => null),
     delete: vi.fn(async () => {}),
     exists: vi.fn(async () => true),
+    replace: vi.fn(async () => {
+      throw new Error('not implemented in this fake');
+    }),
   };
 }
 

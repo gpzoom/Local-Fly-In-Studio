@@ -10,7 +10,7 @@ afterEach(() => {
 
 describe('createMediaAssetStore', () => {
   it('uses the OPFS backend when OPFS is supported', async () => {
-    const sentinel = { save: vi.fn(), get: vi.fn(), delete: vi.fn(), exists: vi.fn() };
+    const sentinel = { save: vi.fn(), get: vi.fn(), delete: vi.fn(), exists: vi.fn(), replace: vi.fn() };
     vi.spyOn(capabilities, 'detectStorageCapabilities').mockResolvedValue({
       opfsSupported: true,
     });
@@ -25,7 +25,7 @@ describe('createMediaAssetStore', () => {
   });
 
   it('uses the IndexedDB backend when OPFS is unsupported', async () => {
-    const sentinel = { save: vi.fn(), get: vi.fn(), delete: vi.fn(), exists: vi.fn() };
+    const sentinel = { save: vi.fn(), get: vi.fn(), delete: vi.fn(), exists: vi.fn(), replace: vi.fn() };
     vi.spyOn(capabilities, 'detectStorageCapabilities').mockResolvedValue({
       opfsSupported: false,
     });
