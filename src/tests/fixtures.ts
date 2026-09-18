@@ -1,4 +1,5 @@
 import type { Project } from '../models/project';
+import type { ProjectTemplate } from '../models/projectTemplate';
 import { CURRENT_SCHEMA_VERSION } from '../models/project';
 
 export function makeMinimalProject(overrides: Partial<Project> = {}): Project {
@@ -57,6 +58,31 @@ export function makeMinimalProject(overrides: Partial<Project> = {}): Project {
       widthPx: 1920,
       heightPx: 1080,
       fps: 30,
+    },
+    ...overrides,
+  };
+}
+
+export function makeMinimalProjectTemplate(overrides: Partial<ProjectTemplate> = {}): ProjectTemplate {
+  return {
+    id: 'test-template-1',
+    name: 'Test Template',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    map: {
+      waypoints: [],
+    },
+    storefront: {
+      durationMs: 3000,
+      durationLocked: false,
+      startTransform: { centerX: 0.5, centerY: 0.5, scale: 1 },
+      endTransform: { centerX: 0.5, centerY: 0.5, scale: 1.1 },
+      motionPreset: 'pull-out',
+      transitionIn: { type: 'crossfade', durationMs: 400 },
+      transitionOut: { type: 'crossfade', durationMs: 400 },
+    },
+    interiorTour: {
+      defaultPhotoDurationMs: 5000,
+      defaultTransition: { type: 'fade-black', durationMs: 300 },
     },
     ...overrides,
   };
