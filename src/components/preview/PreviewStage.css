@@ -50,3 +50,31 @@
 .playback-controls input[type='range'] {
   flex: 1;
 }
+
+.preview-attribution {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.preview-map-error {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  background: rgba(160, 30, 30, 0.85);
+  border-radius: 3px;
+}

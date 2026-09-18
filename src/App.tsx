@@ -53,6 +53,9 @@ export function App() {
         </div>
       )}
       {view === 'studio' && currentProject && <StudioView onBack={handleBackFromStudio} />}
+      <p className="app-privacy-notice">
+        Your photos and videos stay in this browser — nothing is uploaded to a server.
+      </p>
     </div>
   );
 }

@@ -86,10 +86,15 @@ export function PreviewStage({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [overlayUrls, setOverlayUrls] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const [mapImageryError, setMapImageryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cesiumContainerRef.current) return;
-    const handle = createCesiumViewer(cesiumContainerRef.current);
+    const handle = createCesiumViewer(cesiumContainerRef.current, (message) => {
+      // Tile failures can repeat rapidly (e.g. offline) — only the first one is worth
+      // showing; the user can dismiss it, and a fresh session gets a fresh chance.
+      setMapImageryError((current) => current ?? message);
+    });
     viewerHandleRef.current = handle;
     onViewerReadyRef.current?.(handle.viewer);
     return () => handle.destroy();
@@ -234,6 +239,17 @@ export function PreviewStage({
       {/* Opaque backdrop so the globe never shows through an overlay's letterbox bars
           while no map layer is on screen. Sits above Cesium, below the overlays. */}
       {!hasMapLayer && <div className="preview-black-overlay" />}
+      {/* Only shown while the globe itself is actually visible — the overlays/black
+          backdrop above cover it completely during every other segment. */}
+      {hasMapLayer && <p className="preview-attribution">Imagery courtesy of the U.S. Geological Survey</p>}
+      {hasMapLayer && mapImageryError && (
+        <p className="preview-map-error" role="alert">
+          {mapImageryError}
+          <button type="button" onClick={() => setMapImageryError(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
       {activeOverlays.map((layer) => {
         if (layer.kind === 'black') {
           return (
