@@ -9,6 +9,7 @@ import { evaluateProjectTimeline } from '../timeline/evaluator';
 import { applyCameraState } from '../cesium/applyCameraState';
 import { compositeFrame } from './frameCompositor';
 import { createExportAudioGraph, type ExportAudioGraph } from './audioGraph';
+import { filterProjectForVariant, type ExportVariant } from './exportVariants';
 
 export interface ExportOptions {
   project: Project;
@@ -17,6 +18,7 @@ export interface ExportOptions {
   mediaAssetStore: MediaAssetStore;
   onProgress: (elapsedMs: number, totalMs: number) => void;
   signal: AbortSignal;
+  variant?: ExportVariant;
   selectMimeType?: () => CodecSelection | null;
   now?: () => number;
   requestAnimationFrame?: (cb: FrameRequestCallback) => number;
@@ -118,18 +120,23 @@ async function resolveMediaElements(
 
 export async function runExport(options: ExportOptions): Promise<Blob> {
   const {
-    project,
+    project: rawProject,
     viewer,
     outputCanvas,
     mediaAssetStore,
     onProgress,
     signal,
+    variant,
     selectMimeType = selectExportMimeType,
     now = () => performance.now(),
     requestAnimationFrame: raf = (cb: FrameRequestCallback) => globalThis.requestAnimationFrame(cb),
     cancelAnimationFrame: caf = (handle: number) => globalThis.cancelAnimationFrame(handle),
     AudioContextCtor,
   } = options;
+
+  // Every later reference to `project` in this function is deliberately the FILTERED project —
+  // renaming the destructured field to `rawProject` here means nothing below needs to change.
+  const project = filterProjectForVariant(rawProject, variant ?? 'complete');
 
   const codec = selectMimeType();
   if (!codec) {
