@@ -14,6 +14,7 @@ import { InteriorPhotoInspector } from '../inspectors/InteriorPhotoInspector';
 import { InteriorVideoInspector } from '../inspectors/InteriorVideoInspector';
 import { ScalingControls } from '../inspectors/ScalingControls';
 import { BulkEditControls } from '../inspectors/BulkEditControls';
+import { SaveTemplateControls } from './SaveTemplateControls';
 import { ExportPanel } from './ExportPanel';
 import type { Project } from '../../models/project';
 import type { EvaluatedLayer } from '../../models/timeline';
@@ -170,6 +171,8 @@ export function StudioView({ onBack }: StudioViewProps) {
       <ScalingControls project={project} updateProject={updateProject} />
 
       <BulkEditControls project={project} updateProject={updateProject} />
+
+      <SaveTemplateControls project={project} />
 
       {exportOpen && viewerRef.current && (
         <ExportPanel project={project} viewer={viewerRef.current} onClose={() => setExportOpen(false)} />
