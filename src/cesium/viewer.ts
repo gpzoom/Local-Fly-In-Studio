@@ -1,9 +1,15 @@
-import { Ion, ImageryLayer, Viewer, EllipsoidTerrainProvider } from 'cesium';
+import { Ion, ImageryLayer, Viewer, EllipsoidTerrainProvider, CreditDisplay, Credit } from 'cesium';
 import { createUsgsImageryProvider } from './imagery';
 
 // No Cesium ion dependency anywhere in this app. A one-time global neutralization —
 // runs at import, not per viewer instance.
 Ion.defaultAccessToken = '';
+
+// Every CreditDisplay defaults to showing a "Cesium ion" logo credit, but that credit is
+// only required when actually using ion-hosted assets/tokens (which this app never does).
+// Overriding the static default — Cesium's own supported mechanism for this — with an
+// empty, off-screen Credit removes it; the real USGS attribution lives in PreviewStage.
+CreditDisplay.cesiumCredit = new Credit('', false);
 
 export interface CesiumViewerHandle {
   viewer: Viewer;
