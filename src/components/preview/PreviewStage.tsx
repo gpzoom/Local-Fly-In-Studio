@@ -93,7 +93,13 @@ export function PreviewStage({
     const handle = createCesiumViewer(cesiumContainerRef.current, (message) => {
       // Tile failures can repeat rapidly (e.g. offline) — only the first one is worth
       // showing; the user can dismiss it, and a fresh session gets a fresh chance.
-      setMapImageryError((current) => current ?? message);
+      // The raw provider message (tile coordinates, HTTP status) is developer
+      // diagnostic detail, not something a viewer should have to parse — log it,
+      // show a plain-language explanation instead.
+      console.warn('Map imagery tile failed to load:', message);
+      setMapImageryError(
+        (current) => current ?? "Close-up map imagery isn't available for this location — the fly-in will continue.",
+      );
     });
     viewerHandleRef.current = handle;
     onViewerReadyRef.current?.(handle.viewer);
