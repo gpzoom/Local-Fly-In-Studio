@@ -4,9 +4,17 @@ import { extractImageMetadata, type ExtractedMediaMetadata } from '../media/meta
 import { isHeic, convertHeicToJpeg } from '../media/imageDecoder';
 import { resolveFromPhotoGps } from '../destination/resolver';
 import { extractVideoMetadata } from '../media/videoMetadata';
-import { createMapSceneFromTemplate } from '../persistence/templates';
+import { getBuiltinProjectTemplate, BUILTIN_PROJECT_TEMPLATE_ID, type ProjectTemplate } from '../models/projectTemplate';
+import { regeneratePhotoMotion } from '../timeline/bulkEdit';
 import { CURRENT_SCHEMA_VERSION, type Project, type Destination } from '../models/project';
-import type { ProjectScene, StorefrontScene, InteriorTourItem, Transition } from '../models/scenes';
+import type {
+  ProjectScene,
+  StorefrontScene,
+  InteriorTourItem,
+  InteriorTourScene,
+  MapScene,
+  Transition,
+} from '../models/scenes';
 import type { MediaAsset } from '../models/media';
 
 export class NoDestinationError extends Error {
@@ -20,6 +28,7 @@ export interface CreateDraftInput {
   storefrontPhoto: File;
   interiorMedia: File[];
   destinationOverride?: Destination;
+  template?: ProjectTemplate;
 }
 
 export interface CreateDraftDependencies {
@@ -67,18 +76,12 @@ async function importStorefrontAsset(
   };
 }
 
-function createDefaultStorefrontScene(assetId: string): StorefrontScene {
+function createDefaultStorefrontScene(assetId: string, template: ProjectTemplate): StorefrontScene {
   return {
     id: `storefront-${crypto.randomUUID()}`,
     type: 'storefront',
     assetId,
-    durationMs: 2500,
-    durationLocked: false,
-    startTransform: { centerX: 0.5, centerY: 0.5, scale: 1 },
-    endTransform: { centerX: 0.5, centerY: 0.5, scale: 1.05 },
-    motionPreset: 'push-in',
-    transitionIn: { type: 'crossfade', durationMs: 600 },
-    transitionOut: { type: 'crossfade', durationMs: 600 },
+    ...template.storefront,
   };
 }
 
@@ -90,6 +93,7 @@ interface ImportedInteriorItem {
 async function importInteriorPhoto(
   file: File,
   index: number,
+  defaultPhotoDurationMs: number,
   deps: CreateDraftDependencies,
 ): Promise<ImportedInteriorItem> {
   const finalFile = deps.isHeic(file) ? await heicToJpegFile(file, deps.convertHeicToJpeg) : file;
@@ -107,11 +111,11 @@ async function importInteriorPhoto(
     id: `interior-item-${index}-${stored.id}`,
     type: 'photo',
     assetId: stored.id,
-    durationMs: 4000,
+    durationMs: defaultPhotoDurationMs,
     durationLocked: false,
     startTransform: { centerX: 0.5, centerY: 0.5, scale: 1 },
     endTransform: { centerX: 0.5, centerY: 0.5, scale: 1.08 },
-    // Placeholder — overwritten for every photo item by applyDefaultPhotoMotion below.
+    // Placeholder — overwritten for every photo item by regeneratePhotoMotion in createDraft.
     motionPreset: 'push-in',
     transitionToNext: { type: 'cut', durationMs: 0 },
   };
@@ -153,12 +157,17 @@ async function importInteriorVideo(
 
 async function createInteriorItems(
   files: File[],
+  defaultPhotoDurationMs: number,
   deps: CreateDraftDependencies,
 ): Promise<ImportedInteriorItem[]> {
   const results: ImportedInteriorItem[] = [];
   for (const [index, file] of files.entries()) {
     const isVideo = file.type.startsWith('video/');
-    results.push(isVideo ? await importInteriorVideo(file, index, deps) : await importInteriorPhoto(file, index, deps));
+    results.push(
+      isVideo
+        ? await importInteriorVideo(file, index, deps)
+        : await importInteriorPhoto(file, index, defaultPhotoDurationMs, deps),
+    );
   }
   return results;
 }
@@ -169,23 +178,11 @@ function applyDefaultInteriorOrdering(items: InteriorTourItem[]): InteriorTourIt
   return [...items];
 }
 
-// Intentionally redundant with importInteriorPhoto's initial `motionPreset`: this is
-// the explicit, idempotent guarantee that every photo gets the default motion, so a
-// future change to that placeholder value cannot silently change the draft default.
-function applyDefaultPhotoMotion(items: InteriorTourItem[]): void {
-  for (const item of items) {
-    if (item.type === 'photo') {
-      item.motionPreset = 'push-in';
-    }
-  }
-}
-
-function applyDefaultTransitions(items: InteriorTourItem[]): void {
+function applyDefaultTransitions(items: InteriorTourItem[], defaultTransition: Transition): void {
   for (const item of items) {
     // A fresh object per item — a shared reference would let 4b's editing UI change
     // one item's transition and silently change every other item's too.
-    const defaultTransition: Transition = { type: 'crossfade', durationMs: 500 };
-    item.transitionToNext = defaultTransition;
+    item.transitionToNext = { ...defaultTransition };
   }
 }
 
@@ -202,6 +199,8 @@ export async function createDraft(
     convertHeicToJpeg: overrides.convertHeicToJpeg ?? convertHeicToJpeg,
   };
 
+  const resolvedTemplate = input.template ?? getBuiltinProjectTemplate();
+
   const metadata = await deps.extractImageMetadata(input.storefrontPhoto);
   const destination = input.destinationOverride ?? deps.resolveFromPhotoGps(metadata);
   if (!destination) {
@@ -209,25 +208,33 @@ export async function createDraft(
   }
 
   const storefrontAsset = await importStorefrontAsset(input.storefrontPhoto, metadata, deps);
-  const mapScene = createMapSceneFromTemplate(destination);
-  const storefrontScene = createDefaultStorefrontScene(storefrontAsset.id);
+  const mapScene: MapScene = {
+    id: `map-${destination.source}-${crypto.randomUUID()}`,
+    type: 'map',
+    waypoints: resolvedTemplate.map.waypoints,
+  };
+  const storefrontScene = createDefaultStorefrontScene(storefrontAsset.id, resolvedTemplate);
 
-  const imported = await createInteriorItems(input.interiorMedia, deps);
+  const imported = await createInteriorItems(
+    input.interiorMedia,
+    resolvedTemplate.interiorTour.defaultPhotoDurationMs,
+    deps,
+  );
   const orderedItems = applyDefaultInteriorOrdering(imported.map((i) => i.item));
-  applyDefaultPhotoMotion(orderedItems);
-  applyDefaultTransitions(orderedItems);
+  applyDefaultTransitions(orderedItems, resolvedTemplate.interiorTour.defaultTransition);
 
   const scenes: ProjectScene[] = [mapScene, storefrontScene];
   const mediaAssets: MediaAsset[] = [storefrontAsset, ...imported.map((i) => i.mediaAsset)];
 
   if (orderedItems.length > 0) {
-    scenes.push({
+    const interiorScene: InteriorTourScene = {
       id: `interior-${crypto.randomUUID()}`,
       type: 'interior-tour',
       items: orderedItems,
-      defaultPhotoDurationMs: 4000,
-      defaultTransition: { type: 'crossfade', durationMs: 500 },
-    });
+      defaultPhotoDurationMs: resolvedTemplate.interiorTour.defaultPhotoDurationMs,
+      defaultTransition: resolvedTemplate.interiorTour.defaultTransition,
+    };
+    scenes.push(regeneratePhotoMotion(interiorScene));
   }
 
   const now = new Date().toISOString();
@@ -241,5 +248,6 @@ export async function createDraft(
     scenes,
     mediaAssets,
     videoSettings: { aspectRatio: '16:9', widthPx: 1920, heightPx: 1080, fps: 30 },
+    templateId: resolvedTemplate.id === BUILTIN_PROJECT_TEMPLATE_ID ? undefined : resolvedTemplate.id,
   };
 }

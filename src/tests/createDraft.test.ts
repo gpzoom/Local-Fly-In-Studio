@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createDraft, NoDestinationError, type CreateDraftDependencies } from '../quickCreate/createDraft';
 import { ProjectSchema } from '../models/project';
+import { getBuiltinProjectTemplate, BUILTIN_PROJECT_TEMPLATE_ID } from '../models/projectTemplate';
+import type { ProjectTemplate } from '../models/projectTemplate';
 import type { MediaAssetStore, StoredMediaAsset } from '../media/MediaAssetStore';
 import type { VideoMetadata } from '../media/videoMetadata';
 
@@ -43,6 +45,40 @@ function makeDeps(overrides: Partial<CreateDraftDependencies> = {}): Partial<Cre
 function makeFile(name: string, type: string): File {
   return new File(['x'], name, { type });
 }
+
+const CUSTOM_TEMPLATE: ProjectTemplate = {
+  id: 'template-custom-1',
+  name: 'Custom Style',
+  createdAt: '2026-02-01T00:00:00.000Z',
+  map: {
+    waypoints: [
+      {
+        id: 'custom-earth',
+        name: 'Earth',
+        type: 'absolute',
+        camera: { longitude: 0, latitude: 0, height: 20_000_000, heading: 0, pitch: -90, roll: 0 },
+        travelDurationMs: 0,
+        holdDurationMs: 1000,
+        travelDurationLocked: false,
+        holdDurationLocked: false,
+        easing: 'cinematic',
+      },
+    ],
+  },
+  storefront: {
+    durationMs: 3000,
+    durationLocked: false,
+    startTransform: { centerX: 0.5, centerY: 0.5, scale: 1 },
+    endTransform: { centerX: 0.5, centerY: 0.5, scale: 1.1 },
+    motionPreset: 'pull-out',
+    transitionIn: { type: 'fade-black', durationMs: 400 },
+    transitionOut: { type: 'fade-black', durationMs: 400 },
+  },
+  interiorTour: {
+    defaultPhotoDurationMs: 5000,
+    defaultTransition: { type: 'fade-black', durationMs: 300 },
+  },
+};
 
 describe('createDraft', () => {
   it('produces a valid Project from a photo-GPS destination and mixed interior media', async () => {
@@ -93,25 +129,6 @@ describe('createDraft', () => {
     expect(project.scenes.map((s) => s.type)).toEqual(['map', 'storefront']);
   });
 
-  it('applies default push-in motion to every photo item and crossfade transitions to every item', async () => {
-    const deps = makeDeps();
-    const project = await createDraft(
-      {
-        storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'),
-        interiorMedia: [makeFile('a.jpg', 'image/jpeg'), makeFile('b.jpg', 'image/jpeg')],
-      },
-      deps,
-    );
-    const interiorScene = project.scenes.find((s) => s.type === 'interior-tour')!;
-    if (interiorScene.type !== 'interior-tour') throw new Error('unreachable');
-    for (const item of interiorScene.items) {
-      expect(item.transitionToNext).toEqual({ type: 'crossfade', durationMs: 500 });
-      if (item.type === 'photo') {
-        expect(item.motionPreset).toBe('push-in');
-      }
-    }
-  });
-
   it('keeps import order as the default interior item order', async () => {
     const deps = makeDeps();
     const project = await createDraft(
@@ -124,5 +141,88 @@ describe('createDraft', () => {
     const interiorScene = project.scenes.find((s) => s.type === 'interior-tour')!;
     if (interiorScene.type !== 'interior-tour') throw new Error('unreachable');
     expect(interiorScene.items.map((i) => i.type)).toEqual(['photo', 'video', 'photo']);
+  });
+
+  it("applies the built-in template's crossfade transitions and alternates photo motion (not uniform push-in)", async () => {
+    const deps = makeDeps();
+    const project = await createDraft(
+      {
+        storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'),
+        interiorMedia: [makeFile('a.jpg', 'image/jpeg'), makeFile('b.jpg', 'image/jpeg'), makeFile('c.jpg', 'image/jpeg')],
+      },
+      deps,
+    );
+    const interiorScene = project.scenes.find((s) => s.type === 'interior-tour')!;
+    if (interiorScene.type !== 'interior-tour') throw new Error('unreachable');
+    for (const item of interiorScene.items) {
+      expect(item.transitionToNext).toEqual({ type: 'crossfade', durationMs: 500 });
+    }
+    const motionPresets = interiorScene.items.map((i) => (i.type === 'photo' ? i.motionPreset : null));
+    expect(motionPresets).toEqual(['push-in', 'pull-out', 'pan-left-right']);
+  });
+
+  it('omitting template reproduces the exact built-in map/storefront/interior defaults', async () => {
+    const deps = makeDeps();
+    const project = await createDraft(
+      { storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'), interiorMedia: [] },
+      deps,
+    );
+    const builtin = getBuiltinProjectTemplate();
+    const mapScene = project.scenes.find((s) => s.type === 'map')!;
+    if (mapScene.type !== 'map') throw new Error('unreachable');
+    expect(mapScene.waypoints).toEqual(builtin.map.waypoints);
+
+    const storefrontScene = project.scenes.find((s) => s.type === 'storefront')!;
+    if (storefrontScene.type !== 'storefront') throw new Error('unreachable');
+    expect(storefrontScene.durationMs).toBe(builtin.storefront.durationMs);
+    expect(storefrontScene.motionPreset).toBe(builtin.storefront.motionPreset);
+    expect(storefrontScene.transitionIn).toEqual(builtin.storefront.transitionIn);
+
+    expect(project.templateId).toBeUndefined();
+  });
+
+  it("uses a custom template's map/storefront/interior values instead of the built-in's", async () => {
+    const deps = makeDeps();
+    const project = await createDraft(
+      {
+        storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'),
+        interiorMedia: [makeFile('a.jpg', 'image/jpeg')],
+        template: CUSTOM_TEMPLATE,
+      },
+      deps,
+    );
+
+    const mapScene = project.scenes.find((s) => s.type === 'map')!;
+    if (mapScene.type !== 'map') throw new Error('unreachable');
+    expect(mapScene.waypoints).toEqual(CUSTOM_TEMPLATE.map.waypoints);
+
+    const storefrontScene = project.scenes.find((s) => s.type === 'storefront')!;
+    if (storefrontScene.type !== 'storefront') throw new Error('unreachable');
+    expect(storefrontScene.durationMs).toBe(3000);
+    expect(storefrontScene.motionPreset).toBe('pull-out');
+    expect(storefrontScene.transitionIn).toEqual({ type: 'fade-black', durationMs: 400 });
+
+    const interiorScene = project.scenes.find((s) => s.type === 'interior-tour')!;
+    if (interiorScene.type !== 'interior-tour') throw new Error('unreachable');
+    expect(interiorScene.defaultPhotoDurationMs).toBe(5000);
+    expect(interiorScene.items[0].type === 'photo' && interiorScene.items[0].durationMs).toBe(5000);
+    expect(interiorScene.items[0].transitionToNext).toEqual({ type: 'fade-black', durationMs: 300 });
+  });
+
+  it("stamps a custom template's id as the draft's templateId; the built-in path leaves templateId undefined", async () => {
+    const deps = makeDeps();
+    const project = await createDraft(
+      { storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'), interiorMedia: [], template: CUSTOM_TEMPLATE },
+      deps,
+    );
+    expect(project.templateId).toBe('template-custom-1');
+
+    const builtinTemplate = getBuiltinProjectTemplate();
+    expect(builtinTemplate.id).toBe(BUILTIN_PROJECT_TEMPLATE_ID);
+    const builtinProject = await createDraft(
+      { storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'), interiorMedia: [], template: builtinTemplate },
+      deps,
+    );
+    expect(builtinProject.templateId).toBeUndefined();
   });
 });
