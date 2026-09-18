@@ -13,6 +13,7 @@ import { StorefrontInspector } from '../inspectors/StorefrontInspector';
 import { InteriorPhotoInspector } from '../inspectors/InteriorPhotoInspector';
 import { InteriorVideoInspector } from '../inspectors/InteriorVideoInspector';
 import { ScalingControls } from '../inspectors/ScalingControls';
+import { BulkEditControls } from '../inspectors/BulkEditControls';
 import { ExportPanel } from './ExportPanel';
 import type { Project } from '../../models/project';
 import type { EvaluatedLayer } from '../../models/timeline';
@@ -167,6 +168,8 @@ export function StudioView({ onBack }: StudioViewProps) {
       <div className="studio-inspector">{renderInspector()}</div>
 
       <ScalingControls project={project} updateProject={updateProject} />
+
+      <BulkEditControls project={project} updateProject={updateProject} />
 
       {exportOpen && viewerRef.current && (
         <ExportPanel project={project} viewer={viewerRef.current} onClose={() => setExportOpen(false)} />

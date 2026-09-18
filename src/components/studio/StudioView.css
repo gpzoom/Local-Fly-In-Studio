@@ -48,7 +48,8 @@
 }
 
 .waypoint-inspector-actions,
-.scaling-controls-actions {
+.scaling-controls-actions,
+.bulk-edit-controls-actions {
   display: flex;
   gap: 8px;
 }
