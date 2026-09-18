@@ -5,6 +5,8 @@ import { InteriorTourStep } from './InteriorTourStep';
 import { NoDestinationFallback } from './NoDestinationFallback';
 import { createDraft, NoDestinationError } from '../../quickCreate/createDraft';
 import { useProjectStore } from '../../store/projectStore';
+import { getBuiltinProjectTemplate } from '../../models/projectTemplate';
+import { getProjectTemplate } from '../../persistence/projectTemplateRepository';
 import type { Destination, Project } from '../../models/project';
 
 type WizardStep = 'storefront' | 'interior' | 'no-destination' | 'creating';
@@ -16,6 +18,8 @@ interface QuickCreateWizardProps {
 export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
   const [step, setStep] = useState<WizardStep>('storefront');
   const [storefrontPhoto, setStorefrontPhoto] = useState<File | null>(null);
+  // null means "use the built-in template" — set from StorefrontStep's Style picker.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   // Source of truth for the interior selection. Living here (rather than inside
   // InteriorTourStep) means the user's files survive any step transition that
   // unmounts the step — including a no-destination retry that fails for a second,
@@ -30,7 +34,10 @@ export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
       setStep('creating');
       setError(null);
       try {
-        const project = await createDraft({ storefrontPhoto, interiorMedia, destinationOverride });
+        const template = selectedTemplateId
+          ? (await getProjectTemplate(selectedTemplateId)) ?? getBuiltinProjectTemplate()
+          : getBuiltinProjectTemplate();
+        const project = await createDraft({ storefrontPhoto, interiorMedia, destinationOverride, template });
         await createProject(project);
         onDraftReady(project);
       } catch (err) {
@@ -42,14 +49,15 @@ export function QuickCreateWizard({ onDraftReady }: QuickCreateWizardProps) {
         setStep('interior');
       }
     },
-    [storefrontPhoto, interiorMedia, createProject, onDraftReady],
+    [storefrontPhoto, interiorMedia, selectedTemplateId, createProject, onDraftReady],
   );
 
   if (step === 'storefront') {
     return (
       <StorefrontStep
-        onNext={(file) => {
+        onNext={(file, templateId) => {
           setStorefrontPhoto(file);
+          setSelectedTemplateId(templateId);
           setStep('interior');
         }}
       />
