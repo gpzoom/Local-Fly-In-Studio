@@ -42,32 +42,39 @@ export function StudioView({ onBack }: StudioViewProps) {
   const [viewerReady, setViewerReady] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [missingAssetIds, setMissingAssetIds] = useState<Set<string>>(new Set());
+  const [relinkEpoch, setRelinkEpoch] = useState(0);
+
+  // Latest-project ref so the mount-keyed missing-asset scan below can read the current
+  // project without listing the whole (identity-changing-on-every-edit) `project` object
+  // as a dependency — the scan is meant to run once per opened project, not on every edit.
+  // Declared here, above the `!currentProject` guard below, together with every other hook —
+  // React requires the same hooks on every render; an early return between hooks would
+  // violate the Rules of Hooks.
+  const currentProjectRef = useRef(currentProject);
+  currentProjectRef.current = currentProject;
+
+  useEffect(() => {
+    if (!currentProjectRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      if (!mediaStoreRef.current) {
+        mediaStoreRef.current = await createMediaAssetStore();
+      }
+      const project = currentProjectRef.current;
+      if (!project) return;
+      const missing = await checkMissingMediaAssets(project, mediaStoreRef.current);
+      if (!cancelled) setMissingAssetIds(missing);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProject?.id]);
 
   if (!currentProject) return null;
   // Bind a non-null local so nested function declarations below (which are hoisted,
   // so TS can't carry the guard's narrowing of `currentProject` into their bodies)
   // see a definitely-non-null Project.
   const project = currentProject;
-
-  // Latest-project ref so the mount-keyed missing-asset scan below can read the current
-  // project without listing the whole (identity-changing-on-every-edit) `project` object
-  // as a dependency — the scan is meant to run once per opened project, not on every edit.
-  const projectRef = useRef(project);
-  projectRef.current = project;
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!mediaStoreRef.current) {
-        mediaStoreRef.current = await createMediaAssetStore();
-      }
-      const missing = await checkMissingMediaAssets(projectRef.current, mediaStoreRef.current);
-      if (!cancelled) setMissingAssetIds(missing);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [project.id]);
 
   function updateProject(updater: (project: Project) => Project) {
     updateProjectAction(updater);
@@ -86,12 +93,27 @@ export function StudioView({ onBack }: StudioViewProps) {
     updateProject((current) => ({
       ...current,
       mediaAssets: current.mediaAssets.map((a) => (a.id === assetId ? result.updatedAsset : a)),
+      scenes: current.scenes.map((s) => {
+        if (s.type !== 'interior-tour') return s;
+        return {
+          ...s,
+          items: s.items.map((i) => {
+            if (i.type !== 'video' || i.assetId !== assetId || result.updatedAsset.durationMs === undefined) {
+              return i;
+            }
+            const trimEndMs = Math.min(i.trimEndMs, result.updatedAsset.durationMs);
+            const trimStartMs = Math.min(i.trimStartMs, trimEndMs);
+            return { ...i, trimStartMs, trimEndMs };
+          }),
+        };
+      }),
     }));
     setMissingAssetIds((current) => {
       const next = new Set(current);
       next.delete(assetId);
       return next;
     });
+    setRelinkEpoch((n) => n + 1);
     return result.comparison;
   }
 
@@ -155,6 +177,7 @@ export function StudioView({ onBack }: StudioViewProps) {
       if (!storefrontScene) return null;
       return (
         <StorefrontInspector
+          key={storefrontScene.id}
           project={project}
           sceneId={selection.sceneId}
           updateProject={updateProject}
@@ -171,6 +194,7 @@ export function StudioView({ onBack }: StudioViewProps) {
       if (item?.type === 'photo') {
         return (
           <InteriorPhotoInspector
+            key={item.id}
             project={project}
             sceneId={selection.sceneId}
             itemId={selection.itemId}
@@ -183,6 +207,7 @@ export function StudioView({ onBack }: StudioViewProps) {
       if (item?.type === 'video') {
         return (
           <InteriorVideoInspector
+            key={item.id}
             project={project}
             sceneId={selection.sceneId}
             itemId={selection.itemId}
@@ -219,6 +244,7 @@ export function StudioView({ onBack }: StudioViewProps) {
 
       <PreviewStage
         project={project}
+        refreshEpoch={relinkEpoch}
         onOverlayClick={handleOverlayClick}
         onViewerReady={(viewer) => {
           viewerRef.current = viewer;

@@ -14,6 +14,7 @@ import type { VisualTransform } from '../../models/scenes';
 
 interface PreviewStageProps {
   project: Project;
+  refreshEpoch?: number;
   onOverlayClick?: (normalized: { x: number; y: number }, layer: EvaluatedLayer) => void;
   onViewerReady?: (viewer: Viewer) => void;
   onControllerReady?: (controller: PlaybackController) => void;
@@ -43,7 +44,13 @@ function overlayLayers(layers: EvaluatedLayer[]): EvaluatedLayer[] {
   return layers.filter((layer) => !isMapLayer(layer));
 }
 
-export function PreviewStage({ project, onOverlayClick, onViewerReady, onControllerReady }: PreviewStageProps) {
+export function PreviewStage({
+  project,
+  refreshEpoch,
+  onOverlayClick,
+  onViewerReady,
+  onControllerReady,
+}: PreviewStageProps) {
   const timeline = useMemo(() => compileProjectTimeline(project), [project]);
   const cesiumContainerRef = useRef<HTMLDivElement | null>(null);
   const viewerHandleRef = useRef<CesiumViewerHandle | null>(null);
@@ -59,6 +66,12 @@ export function PreviewStage({ project, onOverlayClick, onViewerReady, onControl
    * preview would snap back to 0 on every keystroke in the inspectors.
    */
   const lastTimeMsRef = useRef(0);
+  /**
+   * Last-seen refreshEpoch, so the blob-loading effect below can tell a relink happened
+   * (StudioView bumps this after every successful relink) even though the affected
+   * sourceId itself never changes — relinking overwrites the asset's blob in place.
+   */
+  const lastRefreshEpochRef = useRef(refreshEpoch ?? 0);
 
   // Latest-callback refs so the mount-only viewer effect and the timeline-keyed
   // controller effect don't need onViewerReady/onControllerReady in their dependency
@@ -136,6 +149,21 @@ export function PreviewStage({ project, onOverlayClick, onViewerReady, onControl
     let cancelled = false;
     const cache = urlCacheRef.current;
 
+    const epochChanged = (refreshEpoch ?? 0) !== lastRefreshEpochRef.current;
+    lastRefreshEpochRef.current = refreshEpoch ?? 0;
+
+    if (epochChanged) {
+      // A relink may have replaced the blob behind an already-cached sourceId — the id itself
+      // never changes (media relinking overwrites in place), so the normal already-cached
+      // check below would never notice. Clear everything and let it refetch; this only runs
+      // right after an actual relink, and only ever evicts what's currently on screen.
+      for (const url of cache.values()) {
+        URL.revokeObjectURL(url);
+      }
+      cache.clear();
+      setOverlayUrls(new Map());
+    }
+
     let evicted = false;
     for (const [sourceId, url] of [...cache]) {
       if (neededSourceIds.includes(sourceId)) continue;
@@ -166,7 +194,7 @@ export function PreviewStage({ project, onOverlayClick, onViewerReady, onControl
     return () => {
       cancelled = true;
     };
-  }, [neededSourceIds]);
+  }, [neededSourceIds, refreshEpoch]);
 
   // Revoke every cached object URL when the stage goes away.
   useEffect(() => {
