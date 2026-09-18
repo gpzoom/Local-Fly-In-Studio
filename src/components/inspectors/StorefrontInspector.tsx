@@ -11,7 +11,7 @@ interface StorefrontInspectorProps {
   sceneId: string;
   updateProject: (updater: (project: Project) => Project) => void;
   isMissing: boolean;
-  onRelink: (file: File) => Promise<MediaRelinkComparison>;
+  onRelink: (file: File) => Promise<MediaRelinkComparison | null>;
 }
 
 function describeMismatches(comparison: MediaRelinkComparison): string | null {
@@ -46,6 +46,9 @@ export function StorefrontInspector({
     const file = e.target.files?.[0];
     if (!file) return;
     const comparison = await onRelink(file);
+    // null means the relink itself failed — StudioView already surfaced that via its own
+    // error banner, so there's no comparison to report here.
+    if (!comparison) return;
     setRelinkNote(describeMismatches(comparison));
   }
 

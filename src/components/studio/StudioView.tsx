@@ -81,40 +81,49 @@ export function StudioView({ onBack }: StudioViewProps) {
     setIsDirty(true);
   }
 
-  async function handleRelink(assetId: string, file: File): Promise<MediaRelinkComparison> {
+  async function handleRelink(assetId: string, file: File): Promise<MediaRelinkComparison | null> {
+    setError(null);
     const originalAsset = project.mediaAssets.find((a) => a.id === assetId);
     if (!originalAsset) {
-      throw new Error(`No media asset found with id ${assetId}`);
+      setError(`No media asset found with id ${assetId}`);
+      return null;
     }
-    if (!mediaStoreRef.current) {
-      mediaStoreRef.current = await createMediaAssetStore();
+    try {
+      if (!mediaStoreRef.current) {
+        mediaStoreRef.current = await createMediaAssetStore();
+      }
+      const result = await relinkMediaAsset(originalAsset, file, { mediaAssetStore: mediaStoreRef.current });
+      updateProject((current) => ({
+        ...current,
+        mediaAssets: current.mediaAssets.map((a) => (a.id === assetId ? result.updatedAsset : a)),
+        scenes: current.scenes.map((s) => {
+          if (s.type !== 'interior-tour') return s;
+          return {
+            ...s,
+            items: s.items.map((i) => {
+              if (i.type !== 'video' || i.assetId !== assetId || result.updatedAsset.durationMs === undefined) {
+                return i;
+              }
+              const trimEndMs = Math.min(i.trimEndMs, result.updatedAsset.durationMs);
+              const trimStartMs = Math.min(i.trimStartMs, trimEndMs);
+              return { ...i, trimStartMs, trimEndMs };
+            }),
+          };
+        }),
+      }));
+      setMissingAssetIds((current) => {
+        const next = new Set(current);
+        next.delete(assetId);
+        return next;
+      });
+      setRelinkEpoch((n) => n + 1);
+      return result.comparison;
+    } catch (err) {
+      // A failed relink must never be silent, same convention as handleSave — a storage-quota
+      // failure or similar mid-write error must surface, not vanish as an unhandled rejection.
+      setError(err instanceof Error ? err.message : 'Could not relink this file.');
+      return null;
     }
-    const result = await relinkMediaAsset(originalAsset, file, { mediaAssetStore: mediaStoreRef.current });
-    updateProject((current) => ({
-      ...current,
-      mediaAssets: current.mediaAssets.map((a) => (a.id === assetId ? result.updatedAsset : a)),
-      scenes: current.scenes.map((s) => {
-        if (s.type !== 'interior-tour') return s;
-        return {
-          ...s,
-          items: s.items.map((i) => {
-            if (i.type !== 'video' || i.assetId !== assetId || result.updatedAsset.durationMs === undefined) {
-              return i;
-            }
-            const trimEndMs = Math.min(i.trimEndMs, result.updatedAsset.durationMs);
-            const trimStartMs = Math.min(i.trimStartMs, trimEndMs);
-            return { ...i, trimStartMs, trimEndMs };
-          }),
-        };
-      }),
-    }));
-    setMissingAssetIds((current) => {
-      const next = new Set(current);
-      next.delete(assetId);
-      return next;
-    });
-    setRelinkEpoch((n) => n + 1);
-    return result.comparison;
   }
 
   async function handleSave() {
