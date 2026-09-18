@@ -1,5 +1,5 @@
 // src/components/studio/StudioView.tsx
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Viewer } from 'cesium';
 import './StudioView.css';
 import { useProjectStore } from '../../store/projectStore';
@@ -16,6 +16,10 @@ import { ScalingControls } from '../inspectors/ScalingControls';
 import { BulkEditControls } from '../inspectors/BulkEditControls';
 import { SaveTemplateControls } from './SaveTemplateControls';
 import { ExportPanel } from './ExportPanel';
+import { createMediaAssetStore } from '../../media/createMediaAssetStore';
+import { checkMissingMediaAssets } from '../../media/checkMissingMediaAssets';
+import { relinkMediaAsset, type MediaRelinkComparison } from '../../media/relinkMediaAsset';
+import type { MediaAssetStore } from '../../media/MediaAssetStore';
 import type { Project } from '../../models/project';
 import type { EvaluatedLayer } from '../../models/timeline';
 import type { InteriorTourScene, StorefrontScene } from '../../models/scenes';
@@ -32,10 +36,12 @@ export function StudioView({ onBack }: StudioViewProps) {
 
   const viewerRef = useRef<Viewer | null>(null);
   const controllerRef = useRef<PlaybackController | null>(null);
+  const mediaStoreRef = useRef<MediaAssetStore | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [missingAssetIds, setMissingAssetIds] = useState<Set<string>>(new Set());
 
   if (!currentProject) return null;
   // Bind a non-null local so nested function declarations below (which are hoisted,
@@ -43,9 +49,50 @@ export function StudioView({ onBack }: StudioViewProps) {
   // see a definitely-non-null Project.
   const project = currentProject;
 
+  // Latest-project ref so the mount-keyed missing-asset scan below can read the current
+  // project without listing the whole (identity-changing-on-every-edit) `project` object
+  // as a dependency — the scan is meant to run once per opened project, not on every edit.
+  const projectRef = useRef(project);
+  projectRef.current = project;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!mediaStoreRef.current) {
+        mediaStoreRef.current = await createMediaAssetStore();
+      }
+      const missing = await checkMissingMediaAssets(projectRef.current, mediaStoreRef.current);
+      if (!cancelled) setMissingAssetIds(missing);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id]);
+
   function updateProject(updater: (project: Project) => Project) {
     updateProjectAction(updater);
     setIsDirty(true);
+  }
+
+  async function handleRelink(assetId: string, file: File): Promise<MediaRelinkComparison> {
+    const originalAsset = project.mediaAssets.find((a) => a.id === assetId);
+    if (!originalAsset) {
+      throw new Error(`No media asset found with id ${assetId}`);
+    }
+    if (!mediaStoreRef.current) {
+      mediaStoreRef.current = await createMediaAssetStore();
+    }
+    const result = await relinkMediaAsset(originalAsset, file, { mediaAssetStore: mediaStoreRef.current });
+    updateProject((current) => ({
+      ...current,
+      mediaAssets: current.mediaAssets.map((a) => (a.id === assetId ? result.updatedAsset : a)),
+    }));
+    setMissingAssetIds((current) => {
+      const next = new Set(current);
+      next.delete(assetId);
+      return next;
+    });
+    return result.comparison;
   }
 
   async function handleSave() {
@@ -102,7 +149,19 @@ export function StudioView({ onBack }: StudioViewProps) {
       );
     }
     if (selection.type === 'storefront') {
-      return <StorefrontInspector project={project} sceneId={selection.sceneId} updateProject={updateProject} />;
+      const storefrontScene = project.scenes.find(
+        (s): s is StorefrontScene => s.type === 'storefront' && s.id === selection.sceneId,
+      );
+      if (!storefrontScene) return null;
+      return (
+        <StorefrontInspector
+          project={project}
+          sceneId={selection.sceneId}
+          updateProject={updateProject}
+          isMissing={missingAssetIds.has(storefrontScene.assetId)}
+          onRelink={(file) => handleRelink(storefrontScene.assetId, file)}
+        />
+      );
     }
     if (selection.type === 'interior-item') {
       const interiorScene = project.scenes.find(
@@ -116,6 +175,8 @@ export function StudioView({ onBack }: StudioViewProps) {
             sceneId={selection.sceneId}
             itemId={selection.itemId}
             updateProject={updateProject}
+            isMissing={missingAssetIds.has(item.assetId)}
+            onRelink={(file) => handleRelink(item.assetId, file)}
           />
         );
       }
@@ -126,6 +187,8 @@ export function StudioView({ onBack }: StudioViewProps) {
             sceneId={selection.sceneId}
             itemId={selection.itemId}
             updateProject={updateProject}
+            isMissing={missingAssetIds.has(item.assetId)}
+            onRelink={(file) => handleRelink(item.assetId, file)}
           />
         );
       }
@@ -152,7 +215,7 @@ export function StudioView({ onBack }: StudioViewProps) {
 
       {error && <p role="alert">{error}</p>}
 
-      <TimelineStrip project={project} onSeek={handleSeek} updateProject={updateProject} />
+      <TimelineStrip project={project} onSeek={handleSeek} updateProject={updateProject} missingAssetIds={missingAssetIds} />
 
       <PreviewStage
         project={project}

@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { Project } from '../../models/project';
 import type { FitMode, InteriorTourScene, InteriorVideoItem, TransitionType } from '../../models/scenes';
+import type { MediaRelinkComparison } from '../../media/relinkMediaAsset';
 
 const FIT_MODES: FitMode[] = ['cover', 'contain'];
 const TRANSITION_TYPES: TransitionType[] = ['cut', 'crossfade', 'fade-black'];
@@ -9,9 +11,29 @@ interface InteriorVideoInspectorProps {
   sceneId: string;
   itemId: string;
   updateProject: (updater: (project: Project) => Project) => void;
+  isMissing: boolean;
+  onRelink: (file: File) => Promise<MediaRelinkComparison>;
 }
 
-export function InteriorVideoInspector({ project, sceneId, itemId, updateProject }: InteriorVideoInspectorProps) {
+function describeMismatches(comparison: MediaRelinkComparison): string | null {
+  const mismatches: string[] = [];
+  if (!comparison.filenameMatches) mismatches.push('filename');
+  if (!comparison.sizeMatches) mismatches.push('size');
+  if (!comparison.typeMatches) mismatches.push('type');
+  if (!comparison.durationMatches) mismatches.push('duration');
+  if (mismatches.length === 0) return null;
+  return `Relinked. Note: ${mismatches.join(', ')} differs from the original.`;
+}
+
+export function InteriorVideoInspector({
+  project,
+  sceneId,
+  itemId,
+  updateProject,
+  isMissing,
+  onRelink,
+}: InteriorVideoInspectorProps) {
+  const [relinkNote, setRelinkNote] = useState<string | null>(null);
   const scene = project.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour' && s.id === sceneId);
   const item = scene?.items.find((i): i is InteriorVideoItem => i.id === itemId && i.type === 'video');
   if (!scene || !item) return null;
@@ -29,9 +51,31 @@ export function InteriorVideoInspector({ project, sceneId, itemId, updateProject
     }));
   }
 
+  async function handleRelinkFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const comparison = await onRelink(file);
+    setRelinkNote(describeMismatches(comparison));
+  }
+
+  if (isMissing) {
+    return (
+      <div className="inspector interior-video-inspector">
+        <h3>Interior Video</h3>
+        <p role="alert">Interior video is missing.</p>
+        <label>
+          Relink file
+          <input type="file" accept="video/*" onChange={(e) => void handleRelinkFile(e)} />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <div className="inspector interior-video-inspector">
       <h3>Interior Video</h3>
+
+      {relinkNote && <p role="status">{relinkNote}</p>}
 
       <label>
         Trim start (ms)

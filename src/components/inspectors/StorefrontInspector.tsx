@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { Project } from '../../models/project';
 import type { StorefrontMotionPreset, StorefrontScene, TransitionType } from '../../models/scenes';
+import type { MediaRelinkComparison } from '../../media/relinkMediaAsset';
 
 const MOTION_PRESETS: StorefrontMotionPreset[] = ['none', 'push-in', 'pull-out', 'pan-left', 'pan-right', 'custom'];
 const TRANSITION_TYPES: TransitionType[] = ['cut', 'crossfade', 'fade-black'];
@@ -8,9 +10,28 @@ interface StorefrontInspectorProps {
   project: Project;
   sceneId: string;
   updateProject: (updater: (project: Project) => Project) => void;
+  isMissing: boolean;
+  onRelink: (file: File) => Promise<MediaRelinkComparison>;
 }
 
-export function StorefrontInspector({ project, sceneId, updateProject }: StorefrontInspectorProps) {
+function describeMismatches(comparison: MediaRelinkComparison): string | null {
+  const mismatches: string[] = [];
+  if (!comparison.filenameMatches) mismatches.push('filename');
+  if (!comparison.sizeMatches) mismatches.push('size');
+  if (!comparison.typeMatches) mismatches.push('type');
+  if (!comparison.durationMatches) mismatches.push('duration');
+  if (mismatches.length === 0) return null;
+  return `Relinked. Note: ${mismatches.join(', ')} differs from the original.`;
+}
+
+export function StorefrontInspector({
+  project,
+  sceneId,
+  updateProject,
+  isMissing,
+  onRelink,
+}: StorefrontInspectorProps) {
+  const [relinkNote, setRelinkNote] = useState<string | null>(null);
   const scene = project.scenes.find((s): s is StorefrontScene => s.type === 'storefront' && s.id === sceneId);
   if (!scene) return null;
 
@@ -21,9 +42,31 @@ export function StorefrontInspector({ project, sceneId, updateProject }: Storefr
     }));
   }
 
+  async function handleRelinkFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const comparison = await onRelink(file);
+    setRelinkNote(describeMismatches(comparison));
+  }
+
+  if (isMissing) {
+    return (
+      <div className="inspector storefront-inspector">
+        <h3>Storefront</h3>
+        <p role="alert">Storefront image is missing.</p>
+        <label>
+          Relink file
+          <input type="file" accept="image/*" onChange={(e) => void handleRelinkFile(e)} />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <div className="inspector storefront-inspector">
       <h3>Storefront</h3>
+
+      {relinkNote && <p role="status">{relinkNote}</p>}
 
       <label>
         Duration (ms)

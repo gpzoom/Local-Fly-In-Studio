@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { Project } from '../../models/project';
 import type { InteriorPhotoItem, InteriorTourScene, PhotoMotionPreset, TransitionType } from '../../models/scenes';
+import type { MediaRelinkComparison } from '../../media/relinkMediaAsset';
 
 const PHOTO_MOTION_PRESETS: PhotoMotionPreset[] = ['push-in', 'pull-out', 'pan-left-right', 'pan-right-left'];
 const TRANSITION_TYPES: TransitionType[] = ['cut', 'crossfade', 'fade-black'];
@@ -9,9 +11,29 @@ interface InteriorPhotoInspectorProps {
   sceneId: string;
   itemId: string;
   updateProject: (updater: (project: Project) => Project) => void;
+  isMissing: boolean;
+  onRelink: (file: File) => Promise<MediaRelinkComparison>;
 }
 
-export function InteriorPhotoInspector({ project, sceneId, itemId, updateProject }: InteriorPhotoInspectorProps) {
+function describeMismatches(comparison: MediaRelinkComparison): string | null {
+  const mismatches: string[] = [];
+  if (!comparison.filenameMatches) mismatches.push('filename');
+  if (!comparison.sizeMatches) mismatches.push('size');
+  if (!comparison.typeMatches) mismatches.push('type');
+  if (!comparison.durationMatches) mismatches.push('duration');
+  if (mismatches.length === 0) return null;
+  return `Relinked. Note: ${mismatches.join(', ')} differs from the original.`;
+}
+
+export function InteriorPhotoInspector({
+  project,
+  sceneId,
+  itemId,
+  updateProject,
+  isMissing,
+  onRelink,
+}: InteriorPhotoInspectorProps) {
+  const [relinkNote, setRelinkNote] = useState<string | null>(null);
   const scene = project.scenes.find((s): s is InteriorTourScene => s.type === 'interior-tour' && s.id === sceneId);
   const item = scene?.items.find((i): i is InteriorPhotoItem => i.id === itemId && i.type === 'photo');
   if (!scene || !item) return null;
@@ -29,9 +51,31 @@ export function InteriorPhotoInspector({ project, sceneId, itemId, updateProject
     }));
   }
 
+  async function handleRelinkFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const comparison = await onRelink(file);
+    setRelinkNote(describeMismatches(comparison));
+  }
+
+  if (isMissing) {
+    return (
+      <div className="inspector interior-photo-inspector">
+        <h3>Interior Photo</h3>
+        <p role="alert">Interior photo is missing.</p>
+        <label>
+          Relink file
+          <input type="file" accept="image/*" onChange={(e) => void handleRelinkFile(e)} />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <div className="inspector interior-photo-inspector">
       <h3>Interior Photo</h3>
+
+      {relinkNote && <p role="status">{relinkNote}</p>}
 
       <label>
         Duration (ms)
