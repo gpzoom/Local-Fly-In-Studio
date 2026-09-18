@@ -38,6 +38,28 @@
   display: none;
 }
 
+.export-panel-variant-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.export-panel-variant-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.export-panel-variant-unavailable {
+  color: #888;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
 .export-panel-issues {
   color: #b00020;
   font-size: 13px;

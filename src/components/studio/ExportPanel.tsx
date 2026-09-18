@@ -6,6 +6,12 @@ import type { Project } from '../../models/project';
 import { checkExportCapabilities, type ExportCapabilityReport } from '../../export/capabilities';
 import { createMediaAssetStore } from '../../media/createMediaAssetStore';
 import { runExport } from '../../export/exportRunner';
+import {
+  EXPORT_VARIANTS,
+  EXPORT_VARIANT_LABELS,
+  isVariantAvailable,
+  type ExportVariant,
+} from '../../export/exportVariants';
 
 interface ExportPanelProps {
   project: Project;
@@ -35,6 +41,7 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
     phase: 'idle',
     capabilities: checkExportCapabilities(viewer.scene.canvas),
   }));
+  const [variant, setVariant] = useState<ExportVariant>('complete');
 
   useEffect(() => {
     // Under React StrictMode's dev-only double-invoke, this effect's cleanup runs once
@@ -72,6 +79,7 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
         viewer,
         outputCanvas: canvasRef.current,
         mediaAssetStore,
+        variant,
         onProgress: (elapsedMs, totalMs) => {
           if (!mountedRef.current) return;
           const second = Math.floor(elapsedMs / 1000);
@@ -91,7 +99,13 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
       }
       objectUrlRef.current = url;
       const extension = blob.type.includes('mp4') ? 'mp4' : 'webm';
-      setState({ phase: 'done', url, filename: `${project.projectName}.${extension}` });
+      // Complete Video keeps today's exact filename unchanged; the 3 new variants append the
+      // same label text the picker shows, so the UI and the downloaded filename always agree.
+      const filename =
+        variant === 'complete'
+          ? `${project.projectName}.${extension}`
+          : `${project.projectName} - ${EXPORT_VARIANT_LABELS[variant]}.${extension}`;
+      setState({ phase: 'done', url, filename });
     } catch (err) {
       if (!mountedRef.current) return;
       setState({ phase: 'error', message: err instanceof Error ? err.message : 'Export failed.' });
@@ -125,6 +139,30 @@ export function ExportPanel({ project, viewer, onClose }: ExportPanelProps) {
               Exporting at {project.videoSettings.widthPx}&times;{project.videoSettings.heightPx},{' '}
               {project.videoSettings.fps}fps
             </p>
+            <fieldset className="export-panel-variant-picker">
+              <legend>What to export</legend>
+              {EXPORT_VARIANTS.map((v) => {
+                const available = isVariantAvailable(project, v);
+                return (
+                  <label key={v} className="export-panel-variant-option">
+                    <input
+                      type="radio"
+                      name="export-variant"
+                      value={v}
+                      checked={variant === v}
+                      disabled={!available}
+                      onChange={() => setVariant(v)}
+                    />
+                    {EXPORT_VARIANT_LABELS[v]}
+                    {!available && (
+                      <span className="export-panel-variant-unavailable">
+                        This project has no Interior Tour content.
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
+            </fieldset>
             {state.capabilities.blockingIssues.length > 0 && (
               <ul className="export-panel-issues">
                 {state.capabilities.blockingIssues.map((issue) => (
