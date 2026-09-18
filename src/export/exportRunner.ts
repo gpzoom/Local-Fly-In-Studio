@@ -144,6 +144,16 @@ export async function runExport(options: ExportOptions): Promise<Blob> {
   }
 
   const timeline = compileProjectTimeline(project);
+  if (timeline.totalDurationMs <= 0) {
+    // Not reachable via today's UI (there is no delete-waypoint flow), but representable by the
+    // data model — e.g. an imported or hand-edited project with a map scene that has zero
+    // waypoints. Without this guard, the very first `tick` below would immediately satisfy
+    // `elapsedMs >= timeline.totalDurationMs`, stop the recorder right away, and resolve with an
+    // essentially empty/unplayable Blob: no error, no warning, just a broken "successful"
+    // download. Throwing here instead surfaces through the same catch/error path ExportPanel.tsx
+    // already handles (its `error` phase, rendered with `role="alert"`).
+    throw new Error('This export variant contains no content for this project.');
+  }
   outputCanvas.width = project.videoSettings.widthPx;
   outputCanvas.height = project.videoSettings.heightPx;
   const ctx = outputCanvas.getContext('2d');
