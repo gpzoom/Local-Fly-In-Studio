@@ -23,10 +23,15 @@ export function StorefrontStep({ onNext }: StorefrontStepProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void listProjectTemplates().then((templates) => {
-      if (cancelled) return;
-      setTemplateOptions([BUILTIN_OPTION, ...templates.map((t) => ({ id: t.id, name: t.name }))]);
-    });
+    void listProjectTemplates()
+      .then((templates) => {
+        if (cancelled) return;
+        setTemplateOptions([BUILTIN_OPTION, ...templates.map((t) => ({ id: t.id, name: t.name }))]);
+      })
+      .catch(() => {
+        // Leave the picker on its built-in-only default (already the initial state) — there is
+        // nothing more to show the user here, just avoid an unhandled rejection.
+      });
     return () => {
       cancelled = true;
     };

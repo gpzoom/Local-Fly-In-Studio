@@ -33,7 +33,14 @@ export function SaveTemplateControls({ project }: SaveTemplateControlsProps) {
       setError(ERROR_MESSAGES[result.error.reason]);
       return;
     }
-    await saveProjectTemplate(result.template);
+    try {
+      await saveProjectTemplate(result.template);
+    } catch (err) {
+      // A failed save must never be silent: without this, the user sees neither the
+      // role="alert" error nor the role="status" confirmation.
+      setError(err instanceof Error ? err.message : 'Could not save the template.');
+      return;
+    }
     setConfirmation(`Saved template "${result.template.name}".`);
     setName('');
   }
