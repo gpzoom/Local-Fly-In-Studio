@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createDraft, NoDestinationError, type CreateDraftDependencies } from '../quickCreate/createDraft';
+import {
+  createDraft,
+  NoDestinationError,
+  UndecodableImageError,
+  InsufficientStorageError,
+  type CreateDraftDependencies,
+} from '../quickCreate/createDraft';
 import { ProjectSchema } from '../models/project';
 import { getBuiltinProjectTemplate, BUILTIN_PROJECT_TEMPLATE_ID } from '../models/projectTemplate';
 import type { ProjectTemplate } from '../models/projectTemplate';
@@ -41,6 +47,8 @@ function makeDeps(overrides: Partial<CreateDraftDependencies> = {}): Partial<Cre
     isHeic: vi.fn(() => false),
     convertHeicToJpeg: vi.fn(async () => ({ ok: true as const, blob: new Blob() })),
     extractVideoMetadata: vi.fn(async (): Promise<VideoMetadata> => ({ durationMs: 6000, width: 1920, height: 1080 })),
+    canDecodeNatively: vi.fn(async () => true),
+    checkQuota: vi.fn(async () => ({ sufficient: true, quotaBytes: null, usageBytes: null, availableBytes: null })),
     ...overrides,
   };
 }
@@ -227,5 +235,77 @@ describe('createDraft', () => {
       deps,
     );
     expect(builtinProject.templateId).toBeUndefined();
+  });
+
+  it('checks quota against the total size of every input file before importing anything', async () => {
+    const checkQuota = vi.fn(async () => ({
+      sufficient: true,
+      quotaBytes: 1_000_000,
+      usageBytes: 0,
+      availableBytes: 1_000_000,
+    }));
+    const deps = makeDeps({ checkQuota });
+    const storefrontPhoto = makeFile('storefront.jpg', 'image/jpeg');
+    const interiorMedia = [makeFile('a.jpg', 'image/jpeg'), makeFile('b.mp4', 'video/mp4')];
+    await createDraft({ storefrontPhoto, interiorMedia }, deps);
+
+    const expectedTotal = storefrontPhoto.size + interiorMedia[0].size + interiorMedia[1].size;
+    expect(checkQuota).toHaveBeenCalledWith(expectedTotal);
+  });
+
+  it('throws InsufficientStorageError and imports nothing when quota is insufficient', async () => {
+    const checkQuota = vi.fn(async () => ({
+      sufficient: false,
+      quotaBytes: 100,
+      usageBytes: 50,
+      availableBytes: 50,
+    }));
+    const deps = makeDeps({ checkQuota });
+    await expect(
+      createDraft(
+        { storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'), interiorMedia: [] },
+        deps,
+      ),
+    ).rejects.toBeInstanceOf(InsufficientStorageError);
+    expect((deps.mediaStore as MediaAssetStore).save).not.toHaveBeenCalled();
+  });
+
+  it('throws UndecodableImageError when the storefront photo cannot decode natively', async () => {
+    const canDecodeNatively = vi.fn(async () => false);
+    const deps = makeDeps({ canDecodeNatively });
+    await expect(
+      createDraft(
+        { storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'), interiorMedia: [] },
+        deps,
+      ),
+    ).rejects.toBeInstanceOf(UndecodableImageError);
+  });
+
+  it('throws UndecodableImageError when an interior photo cannot decode natively', async () => {
+    // Storefront photo decodes fine; only the interior photo fails.
+    const canDecodeNatively = vi.fn(async (file: File) => file.name !== 'bad.jpg');
+    const deps = makeDeps({ canDecodeNatively });
+    await expect(
+      createDraft(
+        {
+          storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'),
+          interiorMedia: [makeFile('bad.jpg', 'image/jpeg')],
+        },
+        deps,
+      ),
+    ).rejects.toBeInstanceOf(UndecodableImageError);
+  });
+
+  it('does not decode-check interior video files (only photos)', async () => {
+    const canDecodeNatively = vi.fn(async () => true);
+    const deps = makeDeps({ canDecodeNatively });
+    await createDraft(
+      {
+        storefrontPhoto: makeFile('storefront.jpg', 'image/jpeg'),
+        interiorMedia: [makeFile('clip.mp4', 'video/mp4')],
+      },
+      deps,
+    );
+    expect(canDecodeNatively).toHaveBeenCalledTimes(1); // storefront photo only
   });
 });

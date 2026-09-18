@@ -1,9 +1,10 @@
 import type { MediaAssetStore, StoredMediaAsset } from '../media/MediaAssetStore';
 import { createMediaAssetStore } from '../media/createMediaAssetStore';
 import { extractImageMetadata, type ExtractedMediaMetadata } from '../media/metadata';
-import { isHeic, convertHeicToJpeg } from '../media/imageDecoder';
+import { isHeic, convertHeicToJpeg, canDecodeNatively } from '../media/imageDecoder';
 import { resolveFromPhotoGps } from '../destination/resolver';
 import { extractVideoMetadata } from '../media/videoMetadata';
+import { checkQuota } from '../media/storageCapabilities';
 import { getBuiltinProjectTemplate, BUILTIN_PROJECT_TEMPLATE_ID, type ProjectTemplate } from '../models/projectTemplate';
 import { regeneratePhotoMotion } from '../timeline/bulkEdit';
 import { CURRENT_SCHEMA_VERSION, type Project, type Destination } from '../models/project';
@@ -24,6 +25,26 @@ export class NoDestinationError extends Error {
   }
 }
 
+export class UndecodableImageError extends Error {
+  constructor(filename: string) {
+    super(`Could not decode "${filename}" as an image. Try a different photo.`);
+    this.name = 'UndecodableImageError';
+  }
+}
+
+export class InsufficientStorageError extends Error {
+  constructor(neededBytes: number, availableBytes: number) {
+    super(
+      `These files need about ${formatBytes(neededBytes)} but only ${formatBytes(availableBytes)} of storage is available. Free up space or choose fewer/smaller files.`,
+    );
+    this.name = 'InsufficientStorageError';
+  }
+}
+
+function formatBytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export interface CreateDraftInput {
   storefrontPhoto: File;
   interiorMedia: File[];
@@ -38,6 +59,8 @@ export interface CreateDraftDependencies {
   resolveFromPhotoGps: typeof resolveFromPhotoGps;
   isHeic: typeof isHeic;
   convertHeicToJpeg: typeof convertHeicToJpeg;
+  canDecodeNatively: typeof canDecodeNatively;
+  checkQuota: typeof checkQuota;
 }
 
 async function heicToJpegFile(
@@ -58,6 +81,9 @@ async function importStorefrontAsset(
   deps: CreateDraftDependencies,
 ): Promise<MediaAsset> {
   const finalFile = deps.isHeic(file) ? await heicToJpegFile(file, deps.convertHeicToJpeg) : file;
+  if (!(await deps.canDecodeNatively(finalFile))) {
+    throw new UndecodableImageError(finalFile.name);
+  }
   const stored = await deps.mediaStore.save(finalFile);
   const gps =
     typeof metadata.latitude === 'number' && typeof metadata.longitude === 'number'
@@ -97,6 +123,9 @@ async function importInteriorPhoto(
   deps: CreateDraftDependencies,
 ): Promise<ImportedInteriorItem> {
   const finalFile = deps.isHeic(file) ? await heicToJpegFile(file, deps.convertHeicToJpeg) : file;
+  if (!(await deps.canDecodeNatively(finalFile))) {
+    throw new UndecodableImageError(finalFile.name);
+  }
   const stored: StoredMediaAsset = await deps.mediaStore.save(finalFile);
   const mediaAsset: MediaAsset = {
     id: stored.id,
@@ -197,7 +226,17 @@ export async function createDraft(
     resolveFromPhotoGps: overrides.resolveFromPhotoGps ?? resolveFromPhotoGps,
     isHeic: overrides.isHeic ?? isHeic,
     convertHeicToJpeg: overrides.convertHeicToJpeg ?? convertHeicToJpeg,
+    canDecodeNatively: overrides.canDecodeNatively ?? canDecodeNatively,
+    checkQuota: overrides.checkQuota ?? checkQuota,
   };
+
+  // Fail fast, before any file is read or written: a project this large won't fit regardless
+  // of which specific file turns out to be the problem.
+  const totalBytes = input.storefrontPhoto.size + input.interiorMedia.reduce((sum, f) => sum + f.size, 0);
+  const quota = await deps.checkQuota(totalBytes);
+  if (!quota.sufficient) {
+    throw new InsufficientStorageError(totalBytes, quota.availableBytes ?? 0);
+  }
 
   const resolvedTemplate = input.template ?? getBuiltinProjectTemplate();
 
