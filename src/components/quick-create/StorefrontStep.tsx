@@ -77,7 +77,12 @@ export function StorefrontStep({ onNext }: StorefrontStepProps) {
       <label className="quick-create-photo-input">
         <Camera size={20} />
         <span>Take / Select Photo</span>
-        <input type="file" accept="image/*" capture="environment" onChange={handleFileChange} />
+        {/* No `capture` attribute: on mobile browsers it skips the OS picker and jumps
+            straight into the camera, blocking the "Select" half of this input's own label —
+            and, more importantly, an existing gallery photo is far more likely to carry GPS
+            EXIF than one just taken through in-page camera capture (see InteriorTourStep's
+            file input, which never had `capture` and doesn't have this problem). */}
+        <input type="file" accept="image/*" onChange={handleFileChange} />
       </label>
       {previewUrl && <img className="quick-create-thumbnail" src={previewUrl} alt="Selected storefront" />}
       <button
