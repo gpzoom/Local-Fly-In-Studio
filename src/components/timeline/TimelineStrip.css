@@ -31,3 +31,8 @@
 .timeline-block--selected {
   outline: 2px solid #2684ff;
 }
+
+.timeline-block--missing,
+.timeline-section--missing {
+  border-left: 3px solid #d64545;
+}

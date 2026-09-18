@@ -11,13 +11,14 @@ interface TimelineStripProps {
   project: Project;
   onSeek: (timeMs: number) => void;
   updateProject: (updater: (project: Project) => Project) => void;
+  missingAssetIds: Set<string>;
 }
 
 function seconds(ms: number): number {
   return Math.round(ms / 1000);
 }
 
-export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripProps) {
+export function TimelineStrip({ project, onSeek, updateProject, missingAssetIds }: TimelineStripProps) {
   const timeline = useMemo(() => compileProjectTimeline(project), [project]);
   const expandedSection = useUiStore((state) => state.expandedSection);
   const toggleExpanded = useUiStore((state) => state.toggleExpanded);
@@ -30,6 +31,8 @@ export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripP
   const mapSection = timeline.sections.find((s) => s.type === 'map');
   const storefrontSection = timeline.sections.find((s) => s.type === 'storefront');
   const interiorSection = timeline.sections.find((s) => s.type === 'interior-tour');
+
+  const storefrontMissing = storefrontScene ? missingAssetIds.has(storefrontScene.assetId) : false;
 
   return (
     <div className="timeline-strip">
@@ -46,6 +49,7 @@ export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripP
         {storefrontScene && (
           <button
             type="button"
+            className={storefrontMissing ? 'timeline-section--missing' : undefined}
             onClick={() => {
               select({ type: 'storefront', sceneId: storefrontScene.id });
               // Move the playhead into the storefront section too, so the storefront image
@@ -53,6 +57,7 @@ export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripP
               if (storefrontSection) onSeek(storefrontSection.startMs);
             }}
           >
+            {storefrontMissing ? '⚠ ' : ''}
             Storefront ({storefrontSection ? seconds(storefrontSection.endMs - storefrontSection.startMs) : 0}s)
           </button>
         )}
@@ -75,6 +80,7 @@ export function TimelineStrip({ project, onSeek, updateProject }: TimelineStripP
           timeline={timeline}
           updateProject={updateProject}
           onSeek={onSeek}
+          missingAssetIds={missingAssetIds}
         />
       )}
     </div>

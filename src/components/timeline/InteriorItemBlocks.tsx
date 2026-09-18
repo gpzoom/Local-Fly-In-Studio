@@ -13,6 +13,7 @@ interface InteriorItemBlocksProps {
   timeline: CompiledTimeline;
   updateProject: (updater: (project: Project) => Project) => void;
   onSeek: (timeMs: number) => void;
+  missingAssetIds: Set<string>;
 }
 
 function itemEffectiveDurationMs(item: InteriorTourItem): number {
@@ -28,28 +29,40 @@ interface SortableItemBlockProps {
   item: InteriorTourItem;
   widthPercent: number;
   isSelected: boolean;
+  isMissing: boolean;
   onClick: () => void;
 }
 
-function SortableItemBlock({ item, widthPercent, isSelected, onClick }: SortableItemBlockProps) {
+function SortableItemBlock({ item, widthPercent, isSelected, isMissing, onClick }: SortableItemBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: item.id });
+
+  const classNames = ['timeline-block'];
+  if (isSelected) classNames.push('timeline-block--selected');
+  if (isMissing) classNames.push('timeline-block--missing');
 
   return (
     <button
       ref={setNodeRef}
       type="button"
-      className={isSelected ? 'timeline-block timeline-block--selected' : 'timeline-block'}
+      className={classNames.join(' ')}
       style={{ width: `${widthPercent}%`, transform: CSS.Transform.toString(transform), transition }}
       onClick={onClick}
       {...attributes}
       {...listeners}
     >
+      {isMissing ? '⚠ ' : ''}
       {item.type === 'photo' ? 'Photo' : 'Video'}
     </button>
   );
 }
 
-export function InteriorItemBlocks({ interiorScene, timeline, updateProject, onSeek }: InteriorItemBlocksProps) {
+export function InteriorItemBlocks({
+  interiorScene,
+  timeline,
+  updateProject,
+  onSeek,
+  missingAssetIds,
+}: InteriorItemBlocksProps) {
   const select = useUiStore((state) => state.select);
   const selection = useUiStore((state) => state.selection);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -92,6 +105,7 @@ export function InteriorItemBlocks({ interiorScene, timeline, updateProject, onS
                 item={item}
                 widthPercent={widthPercent}
                 isSelected={isSelected}
+                isMissing={missingAssetIds.has(item.assetId)}
                 onClick={() => {
                   select({ type: 'interior-item', sceneId: interiorScene.id, itemId: item.id });
                   const startMs = findItemSegmentStartMs(timeline, item.id);
