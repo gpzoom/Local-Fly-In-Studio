@@ -3,10 +3,11 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 interface LocalFlyInStudioDB extends DBSchema {
   projects: { key: string; value: Record<string, unknown> };
   mediaAssets: { key: string; value: Record<string, unknown> };
+  templates: { key: string; value: Record<string, unknown> };
 }
 
 const DB_NAME = 'local-fly-in-studio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<LocalFlyInStudioDB>> | null = null;
 
@@ -19,6 +20,9 @@ export function getDb(): Promise<IDBPDatabase<LocalFlyInStudioDB>> {
         }
         if (!db.objectStoreNames.contains('mediaAssets')) {
           db.createObjectStore('mediaAssets', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('templates')) {
+          db.createObjectStore('templates', { keyPath: 'id' });
         }
       },
     });
