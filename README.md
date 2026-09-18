@@ -20,13 +20,24 @@ npm run dev      # starts the Vite dev server
 Other scripts:
 
 ```bash
-npm run build    # type-check (tsc -b) then production build (vite build)
-npm run test     # run the Vitest suite
-npm run lint     # eslint .
+npm run build           # type-check (tsc -b) then production build (vite build)
+npm run test            # run the Vitest suite
+npm run lint            # eslint .
+npm run preview:worker  # serve the built dist/ through a local Cloudflare Worker (wrangler dev)
+npm run deploy          # build, then deploy to Cloudflare Workers (wrangler deploy)
 ```
 
 No environment variables or API keys are required. Map imagery comes from
 USGS's public WMTS service (no Cesium ion, no API key).
+
+## Deployment
+
+The app is a static, fully client-side bundle — deployment is just serving
+`dist/` from Cloudflare Workers' static assets, with no Worker script and
+no server-side code. Configuration lives in `wrangler.jsonc`. The first
+deploy requires `wrangler login` (a one-time interactive Cloudflare
+authentication); after that, `npm run deploy` builds and publishes to your
+`local-fly-in-studio.<your-subdomain>.workers.dev` URL.
 
 ## How it works
 
